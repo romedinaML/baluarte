@@ -1,0 +1,39 @@
+# SQLite (DB is rebuildable from schema.sql)
+.data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Node / TypeScript
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.npm/
+.yarn/
+.pnp.*
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local-only Claude settings (project-shared .claude/ is tracked)
+.claude/settings.local.json
