@@ -37,3 +37,6 @@ Thumbs.db
 
 # Local-only Claude settings (project-shared .claude/ is tracked)
 .claude/settings.local.json
+
+*storybook.log
+storybook-static

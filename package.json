@@ -1,0 +1,8 @@
+{
+  "name": "baluarte-root",
+  "private": true,
+  "scripts": {
+    "baluarte": "npm --prefix baluarte-app run storybook",
+    "baluarte:build": "npm --prefix baluarte-app run build-storybook"
+  }
+}
