@@ -1,0 +1,272 @@
+// baluarte SQLite schema — table relationships, hierarchical view
+// Render: dot -Tpng table-relationships.dot -o table-relationships.png
+//
+// Reading order (top-to-bottom on the central spine):
+//   pages  →  layouts  →  molecules  →  atoms  →  properties
+// The four bold-bordered tables (layouts, molecules, atoms, properties)
+// are the primary domain entities. Storybook, figma_nodes, and states are
+// supporting tables that attach to the spine. Amber rows are join tables.
+digraph baluarte_schema {
+    rankdir=TB;
+    bgcolor="#ffffff";
+    pad=0.5;
+    nodesep=0.6;
+    ranksep=0.95;
+    splines=spline;
+    fontname="Helvetica";
+    labelloc="t";
+    label=<<FONT POINT-SIZE="18"><B>baluarte schema — design hierarchy</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#666">pages → layouts → molecules → atoms → properties · supporting: storybook, figma_nodes, states</FONT>>;
+
+    node [
+        shape=plaintext
+        fontname="Helvetica"
+        fontsize=10
+    ];
+    edge [
+        fontname="Helvetica"
+        fontsize=8
+        color="#666"
+        arrowsize=0.7
+    ];
+
+    // ════════════════════════════════════════════════════════════════
+    // PRIMARY SPINE (layouts → molecules → atoms → properties)
+    // Bold borders, strong blue header, larger label.
+    // ════════════════════════════════════════════════════════════════
+
+    pages [label=<
+        <TABLE BORDER="2" CELLBORDER="1" CELLSPACING="0" CELLPADDING="5" BGCOLOR="white" COLOR="#0a3069">
+            <TR><TD BGCOLOR="#0969da" COLSPAN="2"><FONT COLOR="white" POINT-SIZE="13"><B>pages</B></FONT><BR/><FONT COLOR="#cfe5ff" POINT-SIZE="9">entry point — one row per Figma file</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT" PORT="uuid"><B>uuid</B> (PK)</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+            <TR><TD ALIGN="LEFT">file_key (UNIQUE)</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+            <TR><TD ALIGN="LEFT">edited_at, created_at</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+        </TABLE>
+    >];
+
+    layouts [label=<
+        <TABLE BORDER="3" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white" COLOR="#0a3069">
+            <TR><TD BGCOLOR="#0969da" COLSPAN="2"><FONT COLOR="white" POINT-SIZE="15"><B>① LAYOUTS</B></FONT><BR/><FONT COLOR="#cfe5ff" POINT-SIZE="9">screens / large compositions</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT" PORT="uuid"><B>uuid</B> (PK)</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+            <TR><TD ALIGN="LEFT">name, description</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+            <TR><TD ALIGN="LEFT" PORT="storybook_id">storybook_id (FK)</TD><TD ALIGN="LEFT">TEXT?</TD></TR>
+            <TR><TD ALIGN="LEFT">edited_at, created_at</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+            <TR><TD ALIGN="LEFT">type</TD><TD ALIGN="LEFT">Mobile|Desktop|All</TD></TR>
+        </TABLE>
+    >];
+
+    molecules [label=<
+        <TABLE BORDER="3" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white" COLOR="#0a3069">
+            <TR><TD BGCOLOR="#0969da" COLSPAN="2"><FONT COLOR="white" POINT-SIZE="15"><B>② MOLECULES</B></FONT><BR/><FONT COLOR="#cfe5ff" POINT-SIZE="9">composite components (cards, forms…)</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT" PORT="uuid"><B>uuid</B> (PK)</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+            <TR><TD ALIGN="LEFT">name, description</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+            <TR><TD ALIGN="LEFT" PORT="storybook_id">storybook_id (FK)</TD><TD ALIGN="LEFT">TEXT?</TD></TR>
+            <TR><TD ALIGN="LEFT">edited_at, created_at</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+            <TR><TD ALIGN="LEFT">type</TD><TD ALIGN="LEFT">static|interactive|form</TD></TR>
+        </TABLE>
+    >];
+
+    atoms [label=<
+        <TABLE BORDER="3" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white" COLOR="#0a3069">
+            <TR><TD BGCOLOR="#0969da" COLSPAN="2"><FONT COLOR="white" POINT-SIZE="15"><B>③ ATOMS</B></FONT><BR/><FONT COLOR="#cfe5ff" POINT-SIZE="9">primitive components (button, input…)</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT" PORT="uuid"><B>uuid</B> (PK)</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+            <TR><TD ALIGN="LEFT">name, description</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+            <TR><TD ALIGN="LEFT" PORT="storybook_id">storybook_id (FK)</TD><TD ALIGN="LEFT">TEXT?</TD></TR>
+            <TR><TD ALIGN="LEFT">edited_at, created_at</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+            <TR><TD ALIGN="LEFT">type</TD><TD ALIGN="LEFT">static|interactive|form</TD></TR>
+        </TABLE>
+    >];
+
+    properties [label=<
+        <TABLE BORDER="3" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="white" COLOR="#0a3069">
+            <TR><TD BGCOLOR="#0969da" COLSPAN="2"><FONT COLOR="white" POINT-SIZE="15"><B>④ PROPERTIES</B></FONT><BR/><FONT COLOR="#cfe5ff" POINT-SIZE="9">tailwind class + raw CSS values</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT" PORT="uuid"><B>uuid</B> (PK)</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+            <TR><TD ALIGN="LEFT">name, tailwind_class, css_style</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+            <TR><TD ALIGN="LEFT">type</TD><TD ALIGN="LEFT">Color|Spacing|Font|<BR/>Typography|Positioning|<BR/>Grid|Flex|Border|<BR/>Shadow|Opacity</TD></TR>
+            <TR><TD ALIGN="LEFT">origin</TD><TD ALIGN="LEFT">Custom|Figma Variable</TD></TR>
+        </TABLE>
+    >];
+
+    // ════════════════════════════════════════════════════════════════
+    // SUPPORTING TABLES (muted style)
+    // ════════════════════════════════════════════════════════════════
+
+    storybook [label=<
+        <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#f6f8fa" COLOR="#8b949e">
+            <TR><TD BGCOLOR="#6e7781" COLSPAN="2"><FONT COLOR="white"><B>storybook</B></FONT><BR/><FONT COLOR="#d0d7de" POINT-SIZE="8">generated React/Storybook ref</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT" PORT="uuid"><B>uuid</B> (PK)</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+            <TR><TD ALIGN="LEFT">name</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+            <TR><TD ALIGN="LEFT">url_local, url_prod</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+            <TR><TD ALIGN="LEFT">src_ref</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+        </TABLE>
+    >];
+
+    figma_nodes [label=<
+        <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#f6f8fa" COLOR="#8b949e">
+            <TR><TD BGCOLOR="#6e7781" COLSPAN="2"><FONT COLOR="white"><B>figma_nodes</B></FONT><BR/><FONT COLOR="#d0d7de" POINT-SIZE="8">Figma source link (polymorphic)</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT" PORT="uuid"><B>uuid</B> (PK)</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+            <TR><TD ALIGN="LEFT">figma_node, figma_url</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+            <TR><TD ALIGN="LEFT" PORT="reference_id">reference_id</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+            <TR><TD ALIGN="LEFT">reference_type</TD><TD ALIGN="LEFT">layout|molecule|atom</TD></TR>
+        </TABLE>
+    >];
+
+    states [label=<
+        <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#f6f8fa" COLOR="#8b949e">
+            <TR><TD BGCOLOR="#6e7781" COLSPAN="2"><FONT COLOR="white"><B>states</B></FONT><BR/><FONT COLOR="#d0d7de" POINT-SIZE="8">interaction state (pre-seeded)</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT" PORT="uuid"><B>uuid</B> (PK)</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+            <TR><TD ALIGN="LEFT">type</TD><TD ALIGN="LEFT">hover|active|stale|<BR/>disabled|focus|clicked</TD></TR>
+        </TABLE>
+    >];
+
+    // ════════════════════════════════════════════════════════════════
+    // RELATIONSHIP / JOIN TABLES (amber, smaller)
+    // ════════════════════════════════════════════════════════════════
+
+    pages_registry [label=<
+        <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#fff8e6" COLOR="#bf8700">
+            <TR><TD BGCOLOR="#bf8700"><FONT COLOR="white" POINT-SIZE="9"><B>pages_registry</B></FONT></TD></TR>
+            <TR><TD ALIGN="LEFT" PORT="page_id">page_id · child_id (poly) · child_type</TD></TR>
+        </TABLE>
+    >];
+
+    layout_registry [label=<
+        <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#fff8e6" COLOR="#bf8700">
+            <TR><TD BGCOLOR="#bf8700"><FONT COLOR="white" POINT-SIZE="9"><B>layout_registry</B></FONT></TD></TR>
+            <TR><TD ALIGN="LEFT" PORT="layout_id">layout_id · child_id (poly) · child_type</TD></TR>
+            <TR><TD ALIGN="LEFT" PORT="child_property">child_property (Positioning/Spacing only)</TD></TR>
+        </TABLE>
+    >];
+
+    layout_properties [label=<
+        <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#fff8e6" COLOR="#bf8700">
+            <TR><TD BGCOLOR="#bf8700"><FONT COLOR="white" POINT-SIZE="9"><B>layout_properties</B></FONT></TD></TR>
+            <TR><TD ALIGN="LEFT" PORT="layout_id">layout_id · property_id</TD></TR>
+        </TABLE>
+    >];
+
+    molecules_registry [label=<
+        <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#fff8e6" COLOR="#bf8700">
+            <TR><TD BGCOLOR="#bf8700"><FONT COLOR="white" POINT-SIZE="9"><B>molecules_registry</B></FONT></TD></TR>
+            <TR><TD ALIGN="LEFT" PORT="molecule_id">molecule_id · child_id (poly) · property_id</TD></TR>
+        </TABLE>
+    >];
+
+    molecules_properties [label=<
+        <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#fff8e6" COLOR="#bf8700">
+            <TR><TD BGCOLOR="#bf8700"><FONT COLOR="white" POINT-SIZE="9"><B>molecules_properties</B></FONT></TD></TR>
+            <TR><TD ALIGN="LEFT" PORT="molecule_id">molecule_id · property_id · state_id</TD></TR>
+        </TABLE>
+    >];
+
+    atoms_properties [label=<
+        <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#fff8e6" COLOR="#bf8700">
+            <TR><TD BGCOLOR="#bf8700"><FONT COLOR="white" POINT-SIZE="9"><B>atoms_properties</B></FONT></TD></TR>
+            <TR><TD ALIGN="LEFT" PORT="atom_id">atom_id · property_id · state_id</TD></TR>
+        </TABLE>
+    >];
+
+    // ════════════════════════════════════════════════════════════════
+    // RANK CONSTRAINTS — enforce the visual hierarchy
+    // ════════════════════════════════════════════════════════════════
+    // Rank 0: pages (topmost, the entry point)
+    // Rank 1: layouts (+ pages_registry as bridge)
+    // Rank 2: molecules (+ layout_registry, layout_properties)
+    // Rank 3: atoms    (+ molecules_registry, molecules_properties)
+    // Rank 4: properties (+ atoms_properties)
+    // Sides: storybook (left), figma_nodes / states (right)
+
+    { rank=same; pages; storybook; }
+    { rank=same; layouts; pages_registry; figma_nodes; }
+    { rank=same; molecules; layout_registry; layout_properties; }
+    { rank=same; atoms; molecules_registry; molecules_properties; states; }
+    { rank=same; properties; atoms_properties; }
+
+    // ════════════════════════════════════════════════════════════════
+    // SPINE EDGES — the primary hierarchy, bold blue
+    // pages → layouts → molecules → atoms → properties
+    // These are conceptual containment edges; the actual FKs live on
+    // the join tables (pages_registry, layout_registry, etc.).
+    // ════════════════════════════════════════════════════════════════
+    edge [color="#0969da", penwidth=3, arrowsize=1.0, fontcolor="#0969da", fontsize=10, style=solid];
+    pages     -> layouts    [label="contains", weight=20];
+    layouts   -> molecules  [label="composed of", weight=20];
+    molecules -> atoms      [label="composed of", weight=20];
+    atoms     -> properties [label="styled by", weight=20];
+
+    // ════════════════════════════════════════════════════════════════
+    // FK EDGES — actual schema relationships
+    // ════════════════════════════════════════════════════════════════
+    edge [color="#666", penwidth=1, arrowsize=0.7, fontcolor="#666", fontsize=8, style=solid];
+
+    // pages_registry: bridges pages → (layouts | molecules | atoms)
+    pages_registry:page_id -> pages:uuid [label="CASCADE"];
+    pages -> pages_registry [style=invis, weight=5];
+
+    // layout_registry: bridges layouts → (molecules | atoms) + Positioning/Spacing property
+    layout_registry:layout_id      -> layouts:uuid    [label="CASCADE"];
+    layout_registry:child_property -> properties:uuid [label="SET NULL\nPos/Spacing"];
+
+    // layout_properties: layouts ↔ properties (own CSS)
+    layout_properties:layout_id -> layouts:uuid    [label="CASCADE"];
+    layout_properties           -> properties:uuid [label="CASCADE"];
+
+    // molecules_registry: molecule's children + per-child property
+    molecules_registry:molecule_id -> molecules:uuid  [label="CASCADE"];
+    molecules_registry             -> properties:uuid [label="SET NULL"];
+
+    // molecules_properties: molecule × property × state
+    molecules_properties:molecule_id -> molecules:uuid  [label="CASCADE"];
+    molecules_properties             -> properties:uuid [label="CASCADE"];
+    molecules_properties             -> states:uuid     [label="CASCADE"];
+
+    // atoms_properties: atom × property × state
+    atoms_properties:atom_id -> atoms:uuid      [label="CASCADE"];
+    atoms_properties         -> properties:uuid [label="CASCADE"];
+    atoms_properties         -> states:uuid     [label="CASCADE"];
+
+    // ════════════════════════════════════════════════════════════════
+    // SUPPORTING-TABLE EDGES (storybook, figma_nodes) — muted
+    // ════════════════════════════════════════════════════════════════
+    edge [color="#8b949e", style=dashed, penwidth=1, fontcolor="#8b949e", fontsize=8];
+
+    // storybook ← (layouts, molecules, atoms) via storybook_id (nullable)
+    layouts:storybook_id   -> storybook:uuid [label="SET NULL"];
+    molecules:storybook_id -> storybook:uuid [label="SET NULL"];
+    atoms:storybook_id     -> storybook:uuid [label="SET NULL"];
+
+    // figma_nodes.reference_id → (layouts | molecules | atoms) — polymorphic, app-enforced
+    figma_nodes:reference_id -> layouts:uuid   [label="poly"];
+    figma_nodes:reference_id -> molecules:uuid [label="poly"];
+    figma_nodes:reference_id -> atoms:uuid     [label="poly"];
+
+    // pages_registry / layout_registry / molecules_registry polymorphic child_id
+    pages_registry     -> layouts   [label="poly child", style=dashed];
+    pages_registry     -> molecules [label="poly child", style=dashed];
+    pages_registry     -> atoms     [label="poly child", style=dashed];
+    layout_registry    -> molecules [label="poly child", style=dashed];
+    layout_registry    -> atoms     [label="poly child", style=dashed];
+    molecules_registry -> molecules [label="poly child", style=dashed];
+    molecules_registry -> atoms     [label="poly child", style=dashed];
+
+    // ════════════════════════════════════════════════════════════════
+    // LEGEND
+    // ════════════════════════════════════════════════════════════════
+    legend [shape=plaintext, label=<
+        <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="5" BGCOLOR="white" COLOR="#444">
+            <TR><TD BGCOLOR="#444" COLSPAN="2"><FONT COLOR="white"><B>Legend</B></FONT></TD></TR>
+            <TR><TD ALIGN="LEFT" BGCOLOR="#0969da"><FONT COLOR="white"><B>Primary entity</B></FONT></TD>
+                <TD ALIGN="LEFT">layouts · molecules · atoms · properties</TD></TR>
+            <TR><TD ALIGN="LEFT" BGCOLOR="#6e7781"><FONT COLOR="white">Supporting</FONT></TD>
+                <TD ALIGN="LEFT">storybook · figma_nodes · states</TD></TR>
+            <TR><TD ALIGN="LEFT" BGCOLOR="#bf8700"><FONT COLOR="white">Join table</FONT></TD>
+                <TD ALIGN="LEFT">*_registry, *_properties</TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT COLOR="#0969da"><B>━━━ thick blue</B></FONT></TD>
+                <TD ALIGN="LEFT">conceptual hierarchy spine</TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT COLOR="#666">───── solid grey</FONT></TD>
+                <TD ALIGN="LEFT">enforced FK (CASCADE / SET NULL)</TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT COLOR="#8b949e">- - - dashed</FONT></TD>
+                <TD ALIGN="LEFT">polymorphic / nullable link</TD></TR>
+        </TABLE>
+    >];
+    { rank=sink; legend; }
+}

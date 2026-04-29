@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **Runtime:** Node.js (latest LTS). Pinned via `.nvmrc` (`lts/*`). Run `nvm use` before working.
 - **Languages:** TypeScript and bash. Avoid one-off `.ts` scripts unless the bash form is genuinely unwieldy — prefer `npx tsx -e "..."` inline.
-- **Storage:** SQLite via the `sqlite3` CLI (or `node:sqlite` from Node 22+ when scripting). DB lives at `.data/baluarte.db` (gitignored).
+- **Storage:** SQLite via the bash `sqlite3` CLI **only** — Python and `node:sqlite` are forbidden. DB lives at `.data/baluarte.db` (gitignored). All reusable SQL lives in `/queries/*.sql` and is registered in `/queries/INDEX.md`.
 
 ## Skills (in `.claude/skills/`)
 
@@ -21,7 +21,7 @@ The `.claude/` directory is **checked into git** so skills are versioned with th
 Doc skills (`baluarte-document-{layout,component,property}`) accept either a Figma URL or a `registry_uuid`. When given a URL, they auto-call `baluarte-understand-product` to ensure the registry row exists, then proceed. Build skills require a `registry_uuid` and fail fast for missing prerequisites.
 
 - **`baluarte-orchestrate`** — **status + advisor only** (no execution). Reads SQLite + filesystem and prints a state table plus suggested next-step commands the user can copy-paste. Optional arg is a Figma URL or `registry_uuid` to scope the advice.
-- **`baluarte-remember`** — the only skill that touches `.data/baluarte.db`. Upserts/reads/deletes registry rows, tokens, layouts, components, visual properties, and the dev-docs page cache. Use this for *structured, queryable, cross-session* data.
+- **`baluarte-remember`** — the only skill that touches `.data/baluarte.db`. Reads/writes pages, layouts, molecules, atoms, properties, states, figma_nodes, storybook entries, and their relationship tables. Runs SQL exclusively via bash `sqlite3` and the `/queries/*.sql` cache (see `/queries/INDEX.md`). Use this for *structured, queryable, cross-session* data.
 - **`baluarte-understand-product`** — registers ONE Figma node into the registry. Drills the node at default depth only, classifies it per the tier heuristics, persists the row, and lists direct children as suggested follow-up commands. Required arg: a Figma node URL (with `?node-id=…`).
 - **`baluarte-create-developers-docs`** — ensures the "Baluarte for Devs" page + three section frames exist. Cached in `dev_docs_pages`. **The user runs this manually exactly once per file** before invoking any doc skill — doc skills no longer auto-call it; they read the cache and fail fast if empty.
 - **`baluarte-document-layout`** — documents ONE `node_type='layout'` row: clones the source layout into a Layouts-section artboard + annotation block, persists a `layouts` row. Lists children in the annotation and emits suggested commands for each — never auto-recurses.
@@ -49,7 +49,8 @@ Build-skill rules:
 
 - Anything queryable / row-shaped → `baluarte-remember` (SQLite).
 - Anything prose-shaped (preferences, status, decisions) → `MEMORY.md`.
-- **Never write SQL outside the `baluarte-remember` skill.** If you need a new operation, add it to `.claude/skills/baluarte-remember/SKILL.md` and (if needed) update `.claude/skills/baluarte-remember/schema.sql`.
+- **Never write SQL outside the `baluarte-remember` skill.** Reusable operations live in `/queries/*.sql` (registered in `/queries/INDEX.md`). When a new operation is needed, add a `.sql` file with `:bound_params` and append a row to the index — never inline SQL for anything that recurs. Update `.claude/skills/baluarte-remember/schema.sql` only when the table itself needs to change.
+- **All SQL runs via bash `sqlite3`.** No Python; no `node:sqlite`.
 
 ## Database
 
@@ -60,7 +61,7 @@ mkdir -p .data
 sqlite3 .data/baluarte.db < .claude/skills/baluarte-remember/schema.sql
 ```
 
-Tables: `registry` (with `node_type`), `tokens`, `registry_children`, `registry_tokens`, `dev_docs_pages`, `layouts`, `components`, `layout_components`, `visual_properties`. WAL mode, foreign keys on, cascading deletes. `layouts`, `components`, and `visual_properties` carry `source_hash` / `artifact_path` / `generated_at` (or `applied_to_tailwind_at`) to drive change detection in the build skills. See `baluarte-remember`'s `SKILL.md` for query patterns.
+Tables — 8 single: `pages`, `storybook`, `layouts`, `molecules`, `atoms`, `states`, `figma_nodes`, `properties`. 6 relationship: `pages_registry`, `layout_registry`, `layout_properties`, `molecules_registry`, `molecules_properties`, `atoms_properties`. WAL mode, foreign keys on, cascading deletes. `states` is pre-seeded with the six allowed values; never insert into it. `layout_registry.child_property` is constrained by trigger to Positioning/Spacing properties. See `baluarte-remember`'s `SKILL.md` and `/queries/INDEX.md` for the canonical query catalogue.
 
 Schema is rebuildable; there are no migrations yet. To pick up schema changes: `rm -f .data/baluarte.db* && mkdir -p .data && sqlite3 .data/baluarte.db < .claude/skills/baluarte-remember/schema.sql`.
 

@@ -1,153 +1,175 @@
--- baluarte-remember: canonical schema for .data/baluarte.db
--- Source of truth. Rebuild the DB at any time with:
---   rm -f .data/baluarte.db .data/baluarte.db-wal .data/baluarte.db-shm
---   mkdir -p .data
---   sqlite3 .data/baluarte.db < .claude/skills/baluarte-remember/schema.sql
+-- baluarte-remember schema
+-- Source of truth for .data/baluarte.db.
+-- Idempotent: safe to run repeatedly. Rebuild via:
+--   rm -f .data/baluarte.db* && mkdir -p .data && sqlite3 .data/baluarte.db < .claude/skills/baluarte-remember/schema.sql
 
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
 
--- =============================================================
--- Core registry: every Figma node we care about.
--- node_type drives doc-skill dispatch (layout vs component vs …).
--- =============================================================
-CREATE TABLE IF NOT EXISTS registry (
-  uuid        TEXT PRIMARY KEY,
-  node_id     TEXT NOT NULL UNIQUE,
-  node_type   TEXT NOT NULL DEFAULT 'other'
-              CHECK (node_type IN ('layout','component','property','page','other')),
-  description TEXT NOT NULL,
-  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+-- ──────────────────────────── Single tables ────────────────────────────
+
+CREATE TABLE IF NOT EXISTS pages (
+    uuid       TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    file_key   TEXT NOT NULL UNIQUE,
+    edited_at  TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_registry_node_id   ON registry(node_id);
-CREATE INDEX IF NOT EXISTS idx_registry_node_type ON registry(node_type);
-
-CREATE TRIGGER IF NOT EXISTS trg_registry_updated_at
-AFTER UPDATE ON registry FOR EACH ROW
-BEGIN
-  UPDATE registry SET updated_at = datetime('now') WHERE uuid = OLD.uuid;
-END;
-
--- =============================================================
--- Raw token catalog (everything we discovered while parsing).
--- visual_properties (below) is the curated, code-gen-shaped surface.
--- =============================================================
-CREATE TABLE IF NOT EXISTS tokens (
-  uuid  TEXT PRIMARY KEY,
-  name  TEXT NOT NULL,
-  type  TEXT NOT NULL,
-  value TEXT NOT NULL,
-  UNIQUE(name, type)
+CREATE TABLE IF NOT EXISTS storybook (
+    uuid      TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    name      TEXT NOT NULL,
+    url_local TEXT NOT NULL,
+    url_prod  TEXT,
+    src_ref   TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_tokens_type ON tokens(type);
-
--- =============================================================
--- Generic structural relationships from registry → registry.
--- baluarte-understand-product populates these. Doc skills also
--- maintain a more specific layout_components join (below).
--- =============================================================
-CREATE TABLE IF NOT EXISTS registry_children (
-  parent_uuid TEXT NOT NULL REFERENCES registry(uuid) ON DELETE CASCADE,
-  child_uuid  TEXT NOT NULL REFERENCES registry(uuid) ON DELETE CASCADE,
-  PRIMARY KEY (parent_uuid, child_uuid)
-);
-
-CREATE TABLE IF NOT EXISTS registry_tokens (
-  registry_uuid TEXT NOT NULL REFERENCES registry(uuid) ON DELETE CASCADE,
-  token_uuid    TEXT NOT NULL REFERENCES tokens(uuid)   ON DELETE CASCADE,
-  PRIMARY KEY (registry_uuid, token_uuid)
-);
-
--- =============================================================
--- "Baluarte for Devs" page cache, keyed by Figma file_key.
--- Three section ids cache the three top-level frames inside the
--- page (Properties / Components / Layouts).
--- =============================================================
-CREATE TABLE IF NOT EXISTS dev_docs_pages (
-  uuid                  TEXT PRIMARY KEY,
-  file_key              TEXT NOT NULL UNIQUE,
-  page_node_id          TEXT NOT NULL,
-  properties_section_id TEXT,
-  components_section_id TEXT,
-  layouts_section_id    TEXT,
-  created_at            TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
--- =============================================================
--- Documented layouts. 1:1 with their registry row.
--- properties_json is the code-gen-shaped blob.
--- =============================================================
 CREATE TABLE IF NOT EXISTS layouts (
-  uuid            TEXT PRIMARY KEY,
-  registry_uuid   TEXT NOT NULL UNIQUE REFERENCES registry(uuid) ON DELETE CASCADE,
-  doc_artboard_id TEXT NOT NULL,
-  description     TEXT NOT NULL,
-  properties_json TEXT NOT NULL,
-  source_hash     TEXT,                              -- SHA-256 of the source data used at last build
-  artifact_path   TEXT,                              -- relative to baluarte-app/, e.g. src/layouts/Dashboard/Dashboard.stories.tsx
-  generated_at    TEXT,                              -- NULL until baluarte-build-layout has run
-  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    uuid         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    name         TEXT NOT NULL,
+    storybook_id TEXT REFERENCES storybook(uuid) ON DELETE SET NULL,
+    description  TEXT,
+    edited_at    TEXT,
+    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    type         TEXT NOT NULL CHECK (type IN ('Mobile','Desktop','All'))
 );
 
-CREATE TRIGGER IF NOT EXISTS trg_layouts_updated_at
-AFTER UPDATE ON layouts FOR EACH ROW
+CREATE TABLE IF NOT EXISTS molecules (
+    uuid         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    name         TEXT NOT NULL,
+    storybook_id TEXT REFERENCES storybook(uuid) ON DELETE SET NULL,
+    description  TEXT,
+    edited_at    TEXT,
+    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    type         TEXT NOT NULL CHECK (type IN ('static','interactive','form'))
+);
+
+CREATE TABLE IF NOT EXISTS atoms (
+    uuid         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    name         TEXT NOT NULL,
+    storybook_id TEXT REFERENCES storybook(uuid) ON DELETE SET NULL,
+    description  TEXT,
+    edited_at    TEXT,
+    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    type         TEXT NOT NULL CHECK (type IN ('static','interactive','form'))
+);
+
+CREATE TABLE IF NOT EXISTS states (
+    uuid TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    type TEXT NOT NULL UNIQUE CHECK (type IN ('hover','active','stale','disabled','focus','clicked'))
+);
+
+CREATE TABLE IF NOT EXISTS figma_nodes (
+    uuid           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    figma_node     TEXT NOT NULL,
+    figma_url      TEXT NOT NULL,
+    reference_id   TEXT NOT NULL,
+    reference_type TEXT NOT NULL CHECK (reference_type IN ('layout','molecule','atom')),
+    UNIQUE (reference_type, reference_id)
+);
+
+CREATE TABLE IF NOT EXISTS properties (
+    uuid           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    name           TEXT NOT NULL,
+    tailwind_class TEXT,
+    css_style      TEXT NOT NULL,
+    type           TEXT NOT NULL CHECK (type IN (
+        'Color','Spacing','Font','Typography','Positioning','Grid','Flex',
+        'Border','Shadow','Opacity'
+    )),
+    origin         TEXT NOT NULL CHECK (origin IN ('Custom','Figma Variable')),
+    UNIQUE (name, type)
+);
+
+-- ────────────────────────── Relationship tables ──────────────────────────
+
+CREATE TABLE IF NOT EXISTS pages_registry (
+    uuid       TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    page_id    TEXT NOT NULL REFERENCES pages(uuid) ON DELETE CASCADE,
+    child_id   TEXT NOT NULL,
+    child_type TEXT NOT NULL CHECK (child_type IN ('layout','molecule','atom')),
+    UNIQUE (page_id, child_type, child_id)
+);
+
+-- layout_registry.child_property must point to a Positioning or Spacing property
+-- (enforced by trg_layout_registry_property_type_* triggers below).
+CREATE TABLE IF NOT EXISTS layout_registry (
+    uuid           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    layout_id      TEXT NOT NULL REFERENCES layouts(uuid) ON DELETE CASCADE,
+    child_id       TEXT NOT NULL,
+    child_type     TEXT NOT NULL CHECK (child_type IN ('molecule','atom')),
+    child_property TEXT REFERENCES properties(uuid) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS layout_properties (
+    uuid        TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    layout_id   TEXT NOT NULL REFERENCES layouts(uuid)    ON DELETE CASCADE,
+    property_id TEXT NOT NULL REFERENCES properties(uuid) ON DELETE CASCADE,
+    UNIQUE (layout_id, property_id)
+);
+
+CREATE TABLE IF NOT EXISTS molecules_registry (
+    uuid        TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    molecule_id TEXT NOT NULL REFERENCES molecules(uuid) ON DELETE CASCADE,
+    child_id    TEXT NOT NULL,
+    property_id TEXT REFERENCES properties(uuid) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS molecules_properties (
+    uuid        TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    molecule_id TEXT NOT NULL REFERENCES molecules(uuid)  ON DELETE CASCADE,
+    property_id TEXT NOT NULL REFERENCES properties(uuid) ON DELETE CASCADE,
+    state_id    TEXT NOT NULL REFERENCES states(uuid)     ON DELETE CASCADE,
+    UNIQUE (molecule_id, property_id, state_id)
+);
+
+CREATE TABLE IF NOT EXISTS atoms_properties (
+    uuid        TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    atom_id     TEXT NOT NULL REFERENCES atoms(uuid)      ON DELETE CASCADE,
+    property_id TEXT NOT NULL REFERENCES properties(uuid) ON DELETE CASCADE,
+    state_id    TEXT NOT NULL REFERENCES states(uuid)     ON DELETE CASCADE,
+    UNIQUE (atom_id, property_id, state_id)
+);
+
+-- ──────────────────────────── Indexes ────────────────────────────
+
+CREATE INDEX IF NOT EXISTS idx_pages_file_key            ON pages(file_key);
+CREATE INDEX IF NOT EXISTS idx_layouts_name              ON layouts(name);
+CREATE INDEX IF NOT EXISTS idx_molecules_name            ON molecules(name);
+CREATE INDEX IF NOT EXISTS idx_atoms_name                ON atoms(name);
+CREATE INDEX IF NOT EXISTS idx_figma_nodes_reference     ON figma_nodes(reference_type, reference_id);
+CREATE INDEX IF NOT EXISTS idx_properties_type           ON properties(type);
+CREATE INDEX IF NOT EXISTS idx_pages_registry_page       ON pages_registry(page_id);
+CREATE INDEX IF NOT EXISTS idx_layout_registry_layout    ON layout_registry(layout_id);
+CREATE INDEX IF NOT EXISTS idx_layout_properties_layout  ON layout_properties(layout_id);
+CREATE INDEX IF NOT EXISTS idx_molecules_registry_mol    ON molecules_registry(molecule_id);
+CREATE INDEX IF NOT EXISTS idx_molecules_properties_mol  ON molecules_properties(molecule_id);
+CREATE INDEX IF NOT EXISTS idx_atoms_properties_atom     ON atoms_properties(atom_id);
+
+-- ──────────────────────────── Triggers ────────────────────────────
+
+DROP TRIGGER IF EXISTS trg_layout_registry_property_type_insert;
+CREATE TRIGGER trg_layout_registry_property_type_insert
+BEFORE INSERT ON layout_registry
+FOR EACH ROW
+WHEN NEW.child_property IS NOT NULL
+ AND (SELECT type FROM properties WHERE uuid = NEW.child_property)
+     NOT IN ('Positioning','Spacing')
 BEGIN
-  UPDATE layouts SET updated_at = datetime('now') WHERE uuid = OLD.uuid;
+    SELECT RAISE(ABORT, 'layout_registry.child_property must reference a Positioning or Spacing property');
 END;
 
--- =============================================================
--- Documented components. 1:1 with their registry row.
--- =============================================================
-CREATE TABLE IF NOT EXISTS components (
-  uuid            TEXT PRIMARY KEY,
-  registry_uuid   TEXT NOT NULL UNIQUE REFERENCES registry(uuid) ON DELETE CASCADE,
-  doc_artboard_id TEXT NOT NULL,
-  description     TEXT NOT NULL,
-  properties_json TEXT NOT NULL,
-  granularity     TEXT CHECK (granularity IN ('atomic','molecular','unknown') OR granularity IS NULL),
-  source_hash     TEXT,
-  artifact_path   TEXT,                              -- e.g. src/components/Button/Button.stories.tsx
-  generated_at    TEXT,
-  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE TRIGGER IF NOT EXISTS trg_components_updated_at
-AFTER UPDATE ON components FOR EACH ROW
+DROP TRIGGER IF EXISTS trg_layout_registry_property_type_update;
+CREATE TRIGGER trg_layout_registry_property_type_update
+BEFORE UPDATE OF child_property ON layout_registry
+FOR EACH ROW
+WHEN NEW.child_property IS NOT NULL
+ AND (SELECT type FROM properties WHERE uuid = NEW.child_property)
+     NOT IN ('Positioning','Spacing')
 BEGIN
-  UPDATE components SET updated_at = datetime('now') WHERE uuid = OLD.uuid;
+    SELECT RAISE(ABORT, 'layout_registry.child_property must reference a Positioning or Spacing property');
 END;
 
--- Many-to-many: which layouts use which components.
-CREATE TABLE IF NOT EXISTS layout_components (
-  layout_uuid    TEXT NOT NULL REFERENCES layouts(uuid)    ON DELETE CASCADE,
-  component_uuid TEXT NOT NULL REFERENCES components(uuid) ON DELETE CASCADE,
-  PRIMARY KEY (layout_uuid, component_uuid)
-);
+-- ──────────────────────────── Seed data ────────────────────────────
 
--- =============================================================
--- Visual properties = the Tailwind-theme surface for code-gen.
--- Distinct from `tokens` because it carries tailwind_name and
--- css_property. token_uuid links back when derived from a token.
--- =============================================================
-CREATE TABLE IF NOT EXISTS visual_properties (
-  uuid                   TEXT PRIMARY KEY,
-  name                   TEXT NOT NULL,
-  type                   TEXT NOT NULL,
-  tailwind_name          TEXT NOT NULL,
-  css_property           TEXT NOT NULL,
-  value                  TEXT NOT NULL,
-  doc_artboard_id        TEXT NOT NULL,
-  token_uuid             TEXT REFERENCES tokens(uuid) ON DELETE SET NULL,
-  source_hash            TEXT,                       -- SHA-256 of `value` at last apply
-  applied_to_tailwind_at TEXT,                       -- NULL until baluarte-build-properties has applied
-  created_at             TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE(name, type)
-);
-
-CREATE INDEX IF NOT EXISTS idx_visual_properties_type ON visual_properties(type);
-CREATE INDEX IF NOT EXISTS idx_visual_properties_tw   ON visual_properties(tailwind_name);
+INSERT OR IGNORE INTO states (type) VALUES
+    ('hover'), ('active'), ('stale'), ('disabled'), ('focus'), ('clicked');

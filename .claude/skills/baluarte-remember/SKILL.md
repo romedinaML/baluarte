@@ -1,412 +1,175 @@
 ---
 name: baluarte-remember
-description: Read/update/delete structured records in the project SQLite DB (.data/baluarte.db). Use for queryable cross-session data — Figma component registry, design tokens, parent/child and component/token relationships. NOT for prose, preferences, or status notes (those go in MEMORY.md).
+description: Read/update/delete structured records in the project SQLite DB (.data/baluarte.db). Use for queryable cross-session data — pages, layouts, molecules, atoms, properties, states, Figma nodes, Storybook entries, and the relationships between them. NOT for prose, preferences, or status notes (those go in MEMORY.md).
 ---
 
 # baluarte-remember
 
-The only skill in this repo that touches `.data/baluarte.db`. Other skills must call this one rather than running their own SQL.
+The only skill in this repo that touches `.data/baluarte.db`. Every other skill that needs SQL must call this one. **All SQL runs via bash `sqlite3` — Python is forbidden, and the previous `node:sqlite` escape hatch is removed.**
 
 ## When to use this skill
 
 Use `baluarte-remember` for **structured, queryable, cross-session** data:
 
-- The Figma component inventory parsed by `baluarte-understand-product` (one row per component, joinable to children and tokens).
-- The design token catalog (color/spacing/typography/radius/shadow with name+type+value).
-- Parent↔child relationships between components.
-- Component↔token usage relationships ("which components consume token X").
-- Any future structured artifact where you'll later ask "give me all rows where …".
+- Pages parsed from Figma files (one row per `file_key`).
+- Layouts, molecules, and atoms — the design hierarchy.
+- Visual properties (Tailwind class + raw CSS) and their origin (custom vs. Figma variable).
+- States (hover/active/stale/disabled/focus/clicked) — pre-seeded by the schema.
+- Figma node references attached to a layout/molecule/atom.
+- Storybook entries linking generated code back to layouts/molecules/atoms.
+- Relationship rows: `pages_registry`, `layout_registry`, `layout_properties`, `molecules_registry`, `molecules_properties`, `atoms_properties`.
 
-## When NOT to use this skill
-
-Use `MEMORY.md` (auto-loaded into context) instead for:
-
-- User preferences ("ro prefers terse responses").
-- Project-level facts ("storybook generation is on hold until 2026-05").
-- One-off notes, decisions, or status updates.
-- Anything you'd write as a sentence rather than a row.
-
-Rule of thumb: if the data has a *schema* and you'll *query* it, use this skill. If it reads like prose, use `MEMORY.md`.
+**Do NOT use** for prose-shaped state — preferences, decisions, status notes. Those go in `MEMORY.md`. If you can't express the thing as a row with a stable shape, it doesn't belong here.
 
 ## Canonical paths
 
-- DB file: `.data/baluarte.db` (gitignored — rebuildable any time)
-- Schema:  `.claude/skills/baluarte-remember/schema.sql` (source of truth, committed)
+- DB: `.data/baluarte.db` (gitignored, rebuildable).
+- Schema: `.claude/skills/baluarte-remember/schema.sql`.
+- Reusable queries: `/queries/*.sql`.
+- Query index: `/queries/INDEX.md`.
 
-## Schema (summary)
+## Schema overview
 
-```
-registry(uuid PK, node_id UNIQUE, node_type, description, created_at, updated_at)
-  └ node_type ∈ {layout, component, property, page, other}
-tokens(uuid PK, name, type, value, UNIQUE(name,type))
-registry_children(parent_uuid FK→registry, child_uuid FK→registry)
-registry_tokens(registry_uuid FK→registry, token_uuid FK→tokens)
+Single tables:
 
-dev_docs_pages(uuid PK, file_key UNIQUE, page_node_id,
-               properties_section_id, components_section_id, layouts_section_id)
-layouts(uuid PK, registry_uuid UNIQUE FK, doc_artboard_id, description, properties_json)
-components(uuid PK, registry_uuid UNIQUE FK, doc_artboard_id, description, properties_json, granularity)
-  └ granularity ∈ {atomic, molecular, unknown}
-layout_components(layout_uuid FK→layouts, component_uuid FK→components)
-visual_properties(uuid PK, name, type, tailwind_name, css_property, value,
-                  doc_artboard_id, token_uuid FK→tokens, UNIQUE(name,type))
-```
+| Table | Purpose |
+|---|---|
+| `pages` | Figma files (`file_key` unique) |
+| `storybook` | Generated Storybook entries (name, urls, src ref) |
+| `layouts` | Layouts with `type ∈ {Mobile, Desktop, All}` |
+| `molecules` | Molecules with `type ∈ {static, interactive, form}` |
+| `atoms` | Atoms with `type ∈ {static, interactive, form}` |
+| `states` | Pre-seeded: hover, active, stale, disabled, focus, clicked |
+| `figma_nodes` | One row per `(reference_type, reference_id)` — links a layout/molecule/atom to its Figma node + URL |
+| `properties` | Tailwind+CSS visual properties; `type` includes Color, Spacing, Font, Typography, Positioning, Grid, Flex, Border, Shadow, Opacity; `origin ∈ {Custom, Figma Variable}` |
 
-All FKs cascade on delete (except `visual_properties.token_uuid` which sets null). WAL mode is on. UUIDs are v4 strings.
+Relationship tables (all with `uuid` PK and `ON DELETE CASCADE`):
 
-## Initialise the DB
+| Table | Links |
+|---|---|
+| `pages_registry` | page → (layout \| molecule \| atom) |
+| `layout_registry` | layout → (molecule \| atom), with optional `child_property` (Positioning/Spacing only — enforced by trigger) |
+| `layout_properties` | layout → property (the layout's own CSS) |
+| `molecules_registry` | molecule → child + optional property |
+| `molecules_properties` | molecule × property × state |
+| `atoms_properties` | atom × property × state |
 
-Idempotent — safe to run any time:
+`states` is pre-seeded by `schema.sql` — never insert state rows; look them up via `select_state_by_type`.
+
+## Initialize / rebuild
 
 ```bash
 mkdir -p .data
 sqlite3 .data/baluarte.db < .claude/skills/baluarte-remember/schema.sql
 ```
 
-If `.data/baluarte.db` is missing, run this before any other operation.
-
-## Operations (sqlite3 CLI)
-
-Prefer single-statement invocations over here-docs when possible. UUIDs should be generated by the caller (`uuidgen` or `crypto.randomUUID()` from a TS escape hatch — see below).
-
-### Insert / upsert a registry row (a Figma component / layout / property)
+Hard reset (drops all data):
 
 ```bash
-UUID=$(uuidgen | tr 'A-Z' 'a-z')
-sqlite3 .data/baluarte.db \
-  "INSERT INTO registry(uuid, node_id, node_type, description)
-   VALUES('$UUID', '123:456', 'component', 'Primary CTA button')
-   ON CONFLICT(node_id) DO UPDATE SET
-     node_type   = excluded.node_type,
-     description = excluded.description,
-     updated_at  = datetime('now');"
+rm -f .data/baluarte.db .data/baluarte.db-shm .data/baluarte.db-wal
+mkdir -p .data
+sqlite3 .data/baluarte.db < .claude/skills/baluarte-remember/schema.sql
 ```
 
-`node_type` must be one of `layout | component | property | page | other` (CHECK constraint). Doc skills dispatch on this column.
+The schema is idempotent (`CREATE … IF NOT EXISTS`, `INSERT OR IGNORE` for seed states), so running it on an existing DB is safe but does **not** apply schema changes — for those, hard-reset.
 
-### Insert / upsert a token
+## Query-cache protocol (REQUIRED)
 
-```bash
-TOK=$(uuidgen | tr 'A-Z' 'a-z')
-sqlite3 .data/baluarte.db \
-  "INSERT INTO tokens(uuid, name, type, value) VALUES('$TOK', 'color/brand/primary', 'color', '#0F62FE')
-   ON CONFLICT(name, type) DO UPDATE SET value=excluded.value;"
-```
+When another skill (or the user) asks you to run SQL, follow this protocol every time:
 
-### Link a child component to a parent
+1. **Read `/queries/INDEX.md`.**
+2. **Match by operation + table + parameter signature.** If a row matches, run that file:
+   ```bash
+   sqlite3 .data/baluarte.db <<'EOF'
+   .parameter set :name 'Button'
+   .parameter set :type 'static'
+   .parameter set :storybook_id NULL
+   .parameter set :description NULL
+   .parameter set :edited_at NULL
+   .read queries/insert_atom.sql
+   EOF
+   ```
+3. **No match? Create a new query file** at `/queries/<verb>_<table>[_<qualifier>].sql` using **only `:bound_params`** (no string interpolation). Then append a row to `/queries/INDEX.md` and run the new file.
+4. **Inline ad-hoc SQL is allowed only for one-off introspection** (`.tables`, `.schema`, a one-time `SELECT count(*)`). Anything that will recur must be a file.
 
-```bash
-sqlite3 .data/baluarte.db \
-  "INSERT OR IGNORE INTO registry_children(parent_uuid, child_uuid)
-   VALUES((SELECT uuid FROM registry WHERE node_id='123:456'),
-          (SELECT uuid FROM registry WHERE node_id='123:457'));"
-```
+Naming convention for new query files: `<verb>_<table>[_<qualifier>].sql` where `verb ∈ {insert, select, update, delete, link, unlink, count}`.
 
-### Link a token to a component that uses it
+## Bash invocation patterns
 
-```bash
-sqlite3 .data/baluarte.db \
-  "INSERT OR IGNORE INTO registry_tokens(registry_uuid, token_uuid)
-   VALUES((SELECT uuid FROM registry WHERE node_id='123:456'),
-          (SELECT uuid FROM tokens   WHERE name='color/brand/primary' AND type='color'));"
-```
-
-### Read
+**Single bound query (capturing returned uuid):**
 
 ```bash
-# By Figma node id
-sqlite3 -header -box .data/baluarte.db \
-  "SELECT * FROM registry WHERE node_id='123:456';"
-
-# All children of a component
-sqlite3 -header -box .data/baluarte.db \
-  "SELECT c.node_id, c.description
-   FROM registry_children rc
-   JOIN registry p ON p.uuid = rc.parent_uuid
-   JOIN registry c ON c.uuid = rc.child_uuid
-   WHERE p.node_id='123:456';"
-
-# All tokens of a given type
-sqlite3 -header -box .data/baluarte.db \
-  "SELECT name, value FROM tokens WHERE type='color' ORDER BY name;"
-
-# Components that consume a given token
-sqlite3 -header -box .data/baluarte.db \
-  "SELECT r.node_id, r.description
-   FROM registry_tokens rt
-   JOIN registry r ON r.uuid = rt.registry_uuid
-   JOIN tokens   t ON t.uuid = rt.token_uuid
-   WHERE t.name='color/brand/primary' AND t.type='color';"
-```
-
-### Update
-
-```bash
-sqlite3 .data/baluarte.db \
-  "UPDATE registry SET description='Primary CTA button (large)' WHERE node_id='123:456';"
-```
-The `updated_at` column is maintained by a trigger.
-
-### Delete (cascades)
-
-```bash
-sqlite3 .data/baluarte.db "DELETE FROM registry WHERE node_id='123:456';"
-```
-Removes the registry row and any rows in `registry_children` / `registry_tokens` that referenced it. Tokens are *not* deleted — they're shared.
-
-### Bulk inserts inside a transaction
-
-For multiple writes, batch them so they commit atomically and run faster:
-
-```bash
-sqlite3 .data/baluarte.db <<'SQL'
-BEGIN;
-INSERT INTO registry(uuid, node_id, description) VALUES (...);
-INSERT INTO registry(uuid, node_id, description) VALUES (...);
-INSERT INTO registry_children(parent_uuid, child_uuid) VALUES (...);
-COMMIT;
-SQL
-```
-
-## TypeScript escape hatch
-
-Only reach for this when raw shell becomes unwieldy (e.g. dozens of inserts with computed UUIDs). Project standard is **Node latest LTS** (see `.nvmrc`).
-
-Node 22+ ships SQLite as `node:sqlite` (no native deps, no install needed). Run inline with `tsx`:
-
-```bash
-npx -y tsx -e "
-import { DatabaseSync } from 'node:sqlite';
-import { randomUUID } from 'node:crypto';
-
-const db = new DatabaseSync('.data/baluarte.db');
-db.exec('PRAGMA foreign_keys = ON;');
-
-const insert = db.prepare(
-  'INSERT INTO registry(uuid, node_id, description) VALUES(?, ?, ?) ' +
-  'ON CONFLICT(node_id) DO UPDATE SET description=excluded.description, updated_at=datetime(\\'now\\')'
-);
-
-const rows = [
-  { node_id: '123:456', description: 'Primary CTA' },
-  { node_id: '123:457', description: 'Icon slot' },
-];
-
-db.exec('BEGIN');
-for (const r of rows) insert.run(randomUUID(), r.node_id, r.description);
-db.exec('COMMIT');
-db.close();
-"
-```
-
-Do **not** create dedicated `.ts` script files for this — keep it inline per project guidance. If a workload genuinely needs to be a long-lived module, raise it before adding it.
-
-## Documentation tables (used by the doc skills)
-
-### `dev_docs_pages` — cache of the "Baluarte for Devs" Figma page per file
-
-```bash
-# Look up the cached page for the current file
-sqlite3 -header -box .data/baluarte.db \
-  "SELECT page_node_id, properties_section_id, components_section_id, layouts_section_id
-   FROM dev_docs_pages WHERE file_key='<FIGMA_FILE_KEY>';"
-
-# Insert (first time)
-UUID=$(uuidgen | tr 'A-Z' 'a-z')
-sqlite3 .data/baluarte.db \
-  "INSERT INTO dev_docs_pages(uuid, file_key, page_node_id) VALUES('$UUID', '<KEY>', '<PAGE_ID>');"
-
-# Update section ids once the section frames are created
-sqlite3 .data/baluarte.db \
-  "UPDATE dev_docs_pages SET
-     properties_section_id='<PROPS_ID>',
-     components_section_id='<COMPS_ID>',
-     layouts_section_id='<LAYOUTS_ID>'
-   WHERE file_key='<KEY>';"
-```
-
-### `layouts` — upsert / read
-
-```bash
-UUID=$(uuidgen | tr 'A-Z' 'a-z')
-sqlite3 .data/baluarte.db \
-  "INSERT INTO layouts(uuid, registry_uuid, doc_artboard_id, description, properties_json)
-   VALUES('$UUID', '<REG_UUID>', '<ARTBOARD_ID>', '<one-line description>', json('{...}'))
-   ON CONFLICT(registry_uuid) DO UPDATE SET
-     doc_artboard_id = excluded.doc_artboard_id,
-     description     = excluded.description,
-     properties_json = excluded.properties_json,
-     updated_at      = datetime('now');"
-
-# Has this layout already been documented?
-sqlite3 -header -box .data/baluarte.db \
-  "SELECT uuid, doc_artboard_id FROM layouts WHERE registry_uuid='<REG_UUID>';"
-```
-
-### `components` — upsert / dedup query
-
-```bash
-# IMPORTANT: dedup BEFORE creating any artboard.
-sqlite3 -header -box .data/baluarte.db \
-  "SELECT uuid, doc_artboard_id FROM components WHERE registry_uuid='<REG_UUID>';"
-
-# If empty, then insert:
-UUID=$(uuidgen | tr 'A-Z' 'a-z')
-sqlite3 .data/baluarte.db \
-  "INSERT INTO components(uuid, registry_uuid, doc_artboard_id, description, properties_json)
-   VALUES('$UUID', '<REG_UUID>', '<ARTBOARD_ID>', '<desc>', json('{...}'))
-   ON CONFLICT(registry_uuid) DO UPDATE SET
-     doc_artboard_id = excluded.doc_artboard_id,
-     description     = excluded.description,
-     properties_json = excluded.properties_json,
-     updated_at      = datetime('now');"
-```
-
-### `layout_components` — link a layout to a component
-
-```bash
-sqlite3 .data/baluarte.db \
-  "INSERT OR IGNORE INTO layout_components(layout_uuid, component_uuid)
-   VALUES('<LAYOUT_UUID>', '<COMPONENT_UUID>');"
-
-# Which layouts use this component?
-sqlite3 -header -box .data/baluarte.db \
-  "SELECT l.uuid, r.node_id, r.description
-   FROM layout_components lc
-   JOIN layouts  l ON l.uuid = lc.layout_uuid
-   JOIN registry r ON r.uuid = l.registry_uuid
-   WHERE lc.component_uuid='<COMPONENT_UUID>';"
-```
-
-### `visual_properties` — dedup, upsert, complex queries
-
-```bash
-# Dedup before creating an artboard
-sqlite3 -header -box .data/baluarte.db \
-  "SELECT uuid FROM visual_properties WHERE name='<name>' AND type='<type>';"
-
-# Upsert (auto-link to source token if one exists)
-UUID=$(uuidgen | tr 'A-Z' 'a-z')
-sqlite3 .data/baluarte.db <<SQL
-INSERT INTO visual_properties(uuid, name, type, tailwind_name, css_property, value, doc_artboard_id, token_uuid)
-VALUES(
-  '$UUID', '<name>', '<type>', '<tailwind-name>', '<css-prop>', '<value>', '<ARTBOARD_ID>',
-  (SELECT uuid FROM tokens WHERE name='<name>' AND type='<type>')
+NEW_UUID=$(sqlite3 -batch .data/baluarte.db <<'EOF'
+.parameter set :file_key 'abc123'
+.parameter set :edited_at '2026-04-29T12:00:00Z'
+.read queries/insert_page.sql
+EOF
 )
-ON CONFLICT(name, type) DO UPDATE SET
-  tailwind_name   = excluded.tailwind_name,
-  css_property    = excluded.css_property,
-  value           = excluded.value,
-  doc_artboard_id = excluded.doc_artboard_id,
-  token_uuid      = excluded.token_uuid;
-SQL
-
-# All colors with their tailwind names
-sqlite3 -header -box .data/baluarte.db \
-  "SELECT name, tailwind_name, value FROM visual_properties WHERE type='color' ORDER BY name;"
-
-# Tokens that have NOT yet been promoted to visual_properties (gap analysis)
-sqlite3 -header -box .data/baluarte.db \
-  "SELECT t.name, t.type, t.value
-   FROM tokens t
-   LEFT JOIN visual_properties vp ON vp.name = t.name AND vp.type = t.type
-   WHERE vp.uuid IS NULL
-   ORDER BY t.type, t.name;"
 ```
 
-## Build tracking (used by `baluarte-build-*` skills)
-
-Each `layouts` and `components` row carries a `source_hash` (SHA-256 of the inputs the build last consumed) and an `artifact_path` (relative to `baluarte-app/`). `visual_properties` carries `source_hash` + `applied_to_tailwind_at`. Build skills read these to decide *generate vs update vs skip*.
-
-### Mark a component / layout as built
+**Mixing bound params with NULLs:** sqlite3 CLI `.parameter set` interprets a bare `NULL` token as SQL NULL.
 
 ```bash
-sqlite3 .data/baluarte.db \
-  "UPDATE components
-   SET source_hash='<HASH>',
-       artifact_path='src/components/Button/Button.stories.tsx',
-       generated_at=datetime('now')
-   WHERE uuid='<UUID>';"
+sqlite3 -batch .data/baluarte.db <<'EOF'
+.parameter set :name 'Card'
+.parameter set :storybook_id NULL
+.parameter set :description NULL
+.parameter set :edited_at NULL
+.parameter set :type 'static'
+.read queries/insert_molecule.sql
+EOF
 ```
 
-(Same shape for `layouts`.)
+**Transactional bulk insert:** wrap multiple `.read` calls in `BEGIN; … COMMIT;` inside the heredoc.
 
-### Compute the source hash
+## Operations cookbook
 
-The hash input is the row's canonical `properties_json` (and any token values it references). Use `sha256sum` from coreutils:
+Each operation maps to one canonical query file. Add a new file (and INDEX row) when an operation isn't listed.
 
-```bash
-HASH=$(sqlite3 .data/baluarte.db \
-  "SELECT properties_json FROM components WHERE uuid='<UUID>';" \
-  | sha256sum | awk '{print $1}')
-```
+### Pages
+- Insert/upsert: `queries/insert_page.sql` (idempotent on `file_key`, returns uuid).
+- Lookup: `queries/select_page_by_file_key.sql`.
 
-For `visual_properties`, hash the canonical `value`:
+### Storybook
+- Insert: `queries/insert_storybook.sql`.
 
-```bash
-HASH=$(sqlite3 .data/baluarte.db \
-  "SELECT value FROM visual_properties WHERE uuid='<UUID>';" \
-  | sha256sum | awk '{print $1}')
-```
+### Layouts / Molecules / Atoms
+- Insert: `queries/insert_layout.sql`, `insert_molecule.sql`, `insert_atom.sql`.
+- Lookup: `queries/select_layout_by_uuid.sql`, `select_molecule_by_uuid.sql`, `select_atom_by_uuid.sql`.
+- **Naming rule:** if the caller did not pass `:name`, surface a confirm-on-terminal prompt suggesting either the Figma node's name or a descriptive default — do not silently insert with a placeholder.
 
-### "Which components need (re)building?"
+### Properties
+- Insert/upsert: `queries/insert_property.sql` (idempotent on `(name, type)`).
+- Lookup: `queries/select_property_by_uuid.sql`.
 
-```bash
-sqlite3 -header -box .data/baluarte.db <<'SQL'
-SELECT
-  c.uuid, r.node_id, c.artifact_path,
-  CASE
-    WHEN c.generated_at IS NULL                                              THEN 'missing'
-    WHEN c.source_hash IS NULL                                               THEN 'missing'
-    WHEN c.source_hash <> lower(hex(c.properties_json))                      THEN 'stale'  -- placeholder; see note below
-    ELSE 'fresh'
-  END AS status
-FROM components c
-JOIN registry r ON r.uuid = c.registry_uuid
-ORDER BY status, r.node_id;
-SQL
-```
+### States
+- Lookup only: `queries/select_state_by_type.sql`. **Never insert.**
 
-(SQLite has no built-in SHA-256, so the actual *hash compare* happens in the build skill in shell — `sha256sum` the row's `properties_json` and compare to the stored `source_hash` in bash. The query above is a stub for the listing; the real freshness decision is made per-row by the skill.)
+### Figma nodes
+- Insert/upsert: `queries/insert_figma_node.sql` (idempotent on `(reference_type, reference_id)`).
+- Lookup: `queries/select_figma_node_for_reference.sql`.
 
-### Mark a visual property as applied
-
-```bash
-sqlite3 .data/baluarte.db \
-  "UPDATE visual_properties
-   SET source_hash='<HASH>', applied_to_tailwind_at=datetime('now')
-   WHERE uuid='<UUID>';"
-```
-
-### "Which visual_properties are out of sync with Tailwind?"
-
-```bash
-sqlite3 -header -box .data/baluarte.db \
-  "SELECT uuid, name, type, tailwind_name, applied_to_tailwind_at, source_hash IS NULL AS never_applied
-   FROM visual_properties
-   ORDER BY type, name;"
-```
-
-The build skill then per-row computes `sha256sum` over `value` and compares to `source_hash`.
-
-## Schema rebuild (no migrations yet)
-
-The DB is gitignored and rebuildable. To pick up schema changes:
-
-```bash
-rm -f .data/baluarte.db .data/baluarte.db-wal .data/baluarte.db-shm
-mkdir -p .data
-sqlite3 .data/baluarte.db < .claude/skills/baluarte-remember/schema.sql
-```
-
-Once we have data we want to preserve, introduce `.claude/skills/baluarte-remember/migrations/` and a documented apply step.
+### Relationships
+- `link_page_child.sql` — pages_registry (idempotent).
+- `link_layout_child.sql` — layout_registry. `child_property` is optional and **must** point to a Positioning/Spacing property; the trigger `trg_layout_registry_property_type_*` will RAISE(ABORT) otherwise.
+- `link_layout_property.sql` — layout_properties (idempotent).
+- `link_molecule_child.sql` — molecules_registry.
+- `link_molecule_property.sql` — molecules_properties (idempotent on `(molecule_id, property_id, state_id)`).
+- `link_atom_property.sql` — atoms_properties (idempotent on `(atom_id, property_id, state_id)`).
 
 ## Invariants
 
-- `node_id` is unique in `registry`. Use `ON CONFLICT(node_id) DO UPDATE`.
-- `node_type` must be one of `layout | component | property | page | other`.
-- `(name, type)` is unique in `tokens` and in `visual_properties`. Use `ON CONFLICT(name, type) DO UPDATE`.
-- `registry_uuid` is unique in `layouts` and `components` (1:1 with the registry row).
-- Always **dedup-then-write** for `components` and `visual_properties`: a row already existing means an artboard already exists in Figma. Do not create a second one.
-- Always use parameterised statements / single-quoted SQL strings — never interpolate untrusted text.
-- Never write SQL outside this skill. If another skill needs new schema, update `schema.sql` and document the new operation here.
+- One `figma_nodes` row per `(reference_type, reference_id)`.
+- One `properties` row per `(name, type)`.
+- One `pages` row per `file_key`.
+- `layout_registry.child_property`, when set, must be Positioning or Spacing (trigger-enforced).
+- `states` is read-only after schema load — pre-seeded with the six allowed values.
+- All FKs cascade on delete (or set null where the parent is optional, e.g. `storybook_id`).
+
+## What NOT to do
+
+- ❌ Run SQL via Python or `node:sqlite`. Bash `sqlite3` only.
+- ❌ Inline a multi-line query in a script when the same op already exists in `/queries/`. Reuse.
+- ❌ Insert into `states`. Look up the seeded row instead.
+- ❌ Write SQL with string interpolation of caller-supplied values. Use `.parameter set` + `:bound_params`.
+- ❌ Touch `.data/baluarte.db` from any skill other than `baluarte-remember`. Other skills must call this one.
