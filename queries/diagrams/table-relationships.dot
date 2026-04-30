@@ -107,6 +107,7 @@ digraph baluarte_schema {
             <TR><TD ALIGN="LEFT">figma_node, figma_url</TD><TD ALIGN="LEFT">TEXT</TD></TR>
             <TR><TD ALIGN="LEFT" PORT="reference_id">reference_id</TD><TD ALIGN="LEFT">TEXT</TD></TR>
             <TR><TD ALIGN="LEFT">reference_type</TD><TD ALIGN="LEFT">layout|molecule|atom</TD></TR>
+            <TR><TD ALIGN="LEFT">type</TD><TD ALIGN="LEFT">DOCUMENT|CANVAS|FRAME|<BR/>SECTION|GROUP|SLICE|<BR/>STICKY|COMPONENT|<BR/>COMPONENT_SET|INSTANCE|<BR/>RECTANGLE|ELLIPSE|LINE|<BR/>VECTOR|STAR|POLYGON|<BR/>BOOLEAN_OPERATION|TEXT</TD></TR>
         </TABLE>
     >];
 

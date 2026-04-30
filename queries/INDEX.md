@@ -90,11 +90,11 @@ States are pre-seeded by `schema.sql`. The mutate queries below exist for comple
 
 | Name | File | Params | Description |
 |---|---|---|---|
-| insert_figma_node | insert_figma_node.sql | `:figma_node`, `:figma_url`, `:reference_id`, `:reference_type` | Upsert by `(reference_type, reference_id)` |
+| insert_figma_node | insert_figma_node.sql | `:figma_node`, `:figma_url`, `:reference_id`, `:reference_type`, `:type` | Upsert by `(reference_type, reference_id)`. `:type` ∈ Figma node-kind enum |
 | select_figma_node_by_uuid | select_figma_node_by_uuid.sql | `:uuid` | Fetch one row |
 | select_figma_node_for_reference | select_figma_node_for_reference.sql | `:reference_type`, `:reference_id` | Fetch by polymorphic ref |
 | select_figma_nodes_all | select_figma_nodes_all.sql | — | List all figma_nodes |
-| update_figma_node | update_figma_node.sql | `:uuid`, `:figma_node`, `:figma_url`, `:reference_id`, `:reference_type` | Dynamic update |
+| update_figma_node | update_figma_node.sql | `:uuid`, `:figma_node`, `:figma_url`, `:reference_id`, `:reference_type`, `:type` | Dynamic update |
 | delete_figma_node | delete_figma_node.sql | `:uuid` | Delete one row |
 
 ### properties

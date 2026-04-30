@@ -64,6 +64,12 @@ CREATE TABLE IF NOT EXISTS figma_nodes (
     figma_url      TEXT NOT NULL,
     reference_id   TEXT NOT NULL,
     reference_type TEXT NOT NULL CHECK (reference_type IN ('layout','molecule','atom')),
+    type           TEXT CHECK (type IN (
+        'DOCUMENT','CANVAS','FRAME','SECTION','GROUP','SLICE','STICKY',
+        'COMPONENT','COMPONENT_SET','INSTANCE',
+        'RECTANGLE','ELLIPSE','LINE','VECTOR','STAR','POLYGON',
+        'BOOLEAN_OPERATION','TEXT'
+    )),
     UNIQUE (reference_type, reference_id)
 );
 
