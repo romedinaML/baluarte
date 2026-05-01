@@ -185,7 +185,11 @@ Manually update the registry row's `node_type` via `baluarte-remember`, or just 
   ```bash
   rm -f .data/baluarte.db* && mkdir -p .data && sqlite3 .data/baluarte.db < .claude/skills/baluarte-remember/schema.sql
   ```
-  Tables: 8 single (`pages`, `storybook`, `layouts`, `molecules`, `atoms`, `states`, `figma_nodes`, `properties`) + 6 relationship (`pages_registry`, `layout_registry`, `layout_properties`, `molecules_registry`, `molecules_properties`, `atoms_properties`). `states` is pre-seeded with the six allowed values.
+  Tables: 8 single (`pages`, `storybook`, `layouts`, `molecules`, `atoms`, `states`, `figma_nodes`, `properties`) + 2 variant (`atom_variants`, `molecule_variants`) + 6 relationship (`pages_registry`, `layout_registry`, `layout_properties`, `molecules_registry`, `molecules_properties`, `atoms_properties`). `states` is pre-seeded with the six allowed values.
+
+  Each entity in `layouts`/`molecules`/`atoms` carries two re-sync signals: `edited_at` (the comment timestamp of the `/baluarte-*` annotation) and **`content_diff_hash`** (SHA-256 of the deep node tree returned by `/v1/files/{key}/nodes`). The Figma REST API does **not** expose a per-node `lastModified` — the top-level `lastModified` in the nodes response is file-wide and identical for every entity, so it can't drive per-entity diffing. Hashing the fetched JSON is the substitute. An entity is dirty when **either** signal changes; see `.claude/skills/baluarte-remember/SKILL.md` ("`content_diff_hash`") for the full rule.
+
+  Layouts intentionally have no `layout_variants` table — `layouts.type` already encodes Mobile/Desktop/All variants and each device variant lives as its own row.
 - **Reusable SQL**: `/queries/*.sql`, indexed in `/queries/INDEX.md`. Every SQL operation `baluarte-remember` runs comes from a file there. New operations get a new `.sql` file + INDEX row — never inline SQL for anything that recurs.
 - **Figma documentation artboards**: in the "Baluarte for Devs" page of your Figma file (one artboard per documented row, parented inside the Properties/Components/Layouts sections).
 - **React + Storybook code**: `baluarte-app/src/components/<Name>/` and `baluarte-app/src/layouts/<Name>/`. The shadcn primitives at `baluarte-app/src/components/ui/` are not generated — they're scaffolded by `baluarte-build-setup` and edited by hand.

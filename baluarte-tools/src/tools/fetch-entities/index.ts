@@ -1,12 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { fetchComments } from "./utils/fetchComments.js";
-import { filterComments } from "./utils/filterComments.js";
-import { applyLatestReply } from "./utils/applyLatestReply.js";
-import { bucketComments } from "./utils/bucketComments.js";
-import { fetchNodes } from "./utils/fetchNodes.js";
-import { buildResponse } from "./utils/buildResponse.js";
-import { groupVariants } from "./utils/groupVariants.js";
+import { enrichWithHashes } from "./services/enrichWithHashes.js";
+import { fetchEntityNodes } from "./services/fetchEntityNodes.js";
+import { getEntitiesFromFigma } from "./services/getEntitiesFromFigma.js";
+import { saveInMemory } from "./services/saveInMemory.js";
+import { validateExistance } from "./services/validateExistance.js";
 
 export function registerFetchEntities(server: McpServer): void {
   server.registerTool(
@@ -14,23 +12,19 @@ export function registerFetchEntities(server: McpServer): void {
     {
       title: "Baluarte fetch entities from Figma",
       description:
-        "Reads comments from a Figma file, keeps the ones tagged /baluarte-layout, /baluarte-molecule, or /baluarte-atom, then resolves each tagged node to its first child and returns three buckets.",
+        "Reads tagged Figma comments, diffs them against .data/baluarte.db, deep-fetches the changed nodes, hashes their content, and persists layouts/molecules/atoms (with variants, properties, and relationships). Returns the diff that was applied.",
       inputSchema: { FIGMA_FILE: z.string().min(1) },
     },
     async ({ FIGMA_FILE }) => {
-      const all = await fetchComments(FIGMA_FILE);
-      const tagged = filterComments(all);
-      const withLatest = applyLatestReply(tagged, all);
-      const buckets = bucketComments(withLatest);
-      const allIds = [
-        ...buckets.layouts,
-        ...buckets.molecules,
-        ...buckets.atoms,
-      ].map((e) => e.node_id);
-      const nodesResp = await fetchNodes(FIGMA_FILE, allIds);
-      const result = groupVariants(buildResponse(buckets, nodesResp));
+      const entities = await getEntitiesFromFigma(FIGMA_FILE);
+      const entitiesToUpdate = await validateExistance(entities);
+      const fresh = await fetchEntityNodes(FIGMA_FILE, entitiesToUpdate);
+      enrichWithHashes(entitiesToUpdate, fresh);
+      await saveInMemory(FIGMA_FILE, fresh, entitiesToUpdate);
       return {
-        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        content: [
+          { type: "text", text: JSON.stringify(entitiesToUpdate, null, 2) },
+        ],
       };
     },
   );

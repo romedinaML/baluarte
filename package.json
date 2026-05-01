@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "baluarte": "npm --prefix baluarte-app run storybook",
-    "baluarte:build": "npm --prefix baluarte-app run build-storybook"
+    "baluarte:build": "npm --prefix baluarte-app run build-storybook",
+    "db:reset": "rm -f .data/baluarte.db* && mkdir -p .data && sqlite3 .data/baluarte.db < .claude/skills/baluarte-remember/schema.sql"
   }
 }

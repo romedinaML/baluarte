@@ -36,9 +36,11 @@ Single tables:
 |---|---|
 | `pages` | Figma files (`file_key` unique) |
 | `storybook` | Generated Storybook entries (name, urls, src ref) |
-| `layouts` | Layouts with `type ∈ {Mobile, Desktop, All}` |
-| `molecules` | Molecules with `type ∈ {static, interactive, form}` |
-| `atoms` | Atoms with `type ∈ {static, interactive, form}` |
+| `layouts` | Layouts with `type ∈ {Mobile, Desktop, All}`. Carries `edited_at` (comment timestamp) and `content_diff_hash` (see below) |
+| `molecules` | Molecules with `type ∈ {static, interactive, form}`. Same `edited_at` + `content_diff_hash` semantics |
+| `atoms` | Atoms with `type ∈ {static, interactive, form}`. Same `edited_at` + `content_diff_hash` semantics |
+| `atom_variants` | Variants of an atom: `(atom_id, figma_node)` unique, plus `name`, `variant`, optional `state_id` |
+| `molecule_variants` | Variants of a molecule: same shape as `atom_variants`, FK to `molecules` |
 | `states` | Pre-seeded: hover, active, stale, disabled, focus, clicked |
 | `figma_nodes` | One row per `(reference_type, reference_id)` — links a layout/molecule/atom to its Figma node + URL |
 | `properties` | Tailwind+CSS visual properties; `type` includes Color, Spacing, Font, Typography, Positioning, Grid, Flex, Border, Shadow, Opacity; `origin ∈ {Custom, Figma Variable}` |
@@ -55,6 +57,25 @@ Relationship tables (all with `uuid` PK and `ON DELETE CASCADE`):
 | `atoms_properties` | atom × property × state |
 
 `states` is pre-seeded by `schema.sql` — never insert state rows; look them up via `select_state_by_type`.
+
+### `content_diff_hash` (atoms / molecules / layouts)
+
+Per-entity SHA-256 over the deep document tree returned by `/v1/files/{key}/nodes`. The Figma REST API does **not** expose a per-node `lastModified` — `lastModified` at the response root is the file-wide timestamp and identical for every node. We therefore hash the fetched JSON instead and treat any change in the hash as "the design changed."
+
+Lifecycle:
+- **Compute:** the consumer (currently the `baluarte-tools` MCP, tool `baluarte-fetch-entities`) hashes `node.document` after the deep `/nodes` fetch and writes the result to this column on every save.
+- **Diff rule:** an entity is dirty when **either** `edited_at` (comment timestamp) **or** `content_diff_hash` differs from the freshly computed values. Both signals must be checked — comment-only changes still rewrite metadata (name, variant, state) and design-only changes still rewrite properties and relationships.
+- **No native SQL writes here.** Callers compute the hash externally and pass it as a bound `:content_diff_hash` parameter on insert/update.
+
+Naming: `content_diff_hash` (NOT `content_hash`) — the underscore before `diff` is intentional. It distinguishes "this is the diff key for re-sync" from a plain content fingerprint.
+
+### Variants (`atom_variants`, `molecule_variants`)
+
+Atoms and molecules are stored as a single "default" row (in `atoms` / `molecules`) plus zero or more **variant** rows (in `atom_variants` / `molecule_variants`). Each variant row remembers the variant's Figma node id, optional name/variant label, and optional state — the visual properties of the variant land in `atoms_properties` / `molecules_properties` keyed by `state_id` against the **same parent uuid**, not a new entity uuid.
+
+**Layouts intentionally have no `layout_variants` table** — the `layouts.type` column already encodes Mobile/Desktop/All variants, and each device variant lives as its own row in `layouts` (own uuid). Don't add `layout_variants`.
+
+Save lifecycle (per `baluarte-fetch-entities`): after upserting the parent atom/molecule, wipe its variant rows by parent id and re-insert from the latest comment buckets. The unique `(atom_id, figma_node)` / `(molecule_id, figma_node)` constraint also makes the inserts safely idempotent if the wipe step is skipped.
 
 ## Initialize / rebuild
 
@@ -134,9 +155,17 @@ Each operation maps to one canonical query file. Add a new file (and INDEX row) 
 - Insert: `queries/insert_storybook.sql`.
 
 ### Layouts / Molecules / Atoms
-- Insert: `queries/insert_layout.sql`, `insert_molecule.sql`, `insert_atom.sql`.
-- Lookup: `queries/select_layout_by_uuid.sql`, `select_molecule_by_uuid.sql`, `select_atom_by_uuid.sql`.
+- Insert: `queries/insert_layout.sql`, `insert_molecule.sql`, `insert_atom.sql` (each accepts `:content_diff_hash`).
+- Lookup: `queries/select_layout_by_uuid.sql`, `select_molecule_by_uuid.sql`, `select_atom_by_uuid.sql` (return `content_diff_hash`).
+- Lookup by Figma node id: `select_layout_uuid_by_figma_node.sql`, `select_molecule_uuid_by_figma_node.sql`, `select_atom_uuid_by_figma_node.sql`.
+- Bulk diff list: `list_layouts_with_figma_node.sql`, `list_molecules_with_figma_node.sql`, `list_atoms_with_figma_node.sql` — each row carries `(figma_node, uuid, edited_at, content_diff_hash)` for cheap diffing.
 - **Naming rule:** if the caller did not pass `:name`, surface a confirm-on-terminal prompt suggesting either the Figma node's name or a descriptive default — do not silently insert with a placeholder.
+
+### Atom / Molecule variants
+- Insert/upsert: `queries/insert_atom_variant.sql`, `insert_molecule_variant.sql` (idempotent on `(parent_id, figma_node)`).
+- List by parent: `queries/list_atom_variants_by_atom.sql`, `list_molecule_variants_by_molecule.sql`.
+- Wipe before re-sync: `queries/delete_atom_variants_by_atom.sql`, `delete_molecule_variants_by_molecule.sql`.
+- Variant rows do **not** have their own `figma_nodes` row — the parent atom/molecule already owns the canonical figma_node mapping. The variant table stores `figma_node` directly so we can list children without an extra join.
 
 ### Properties
 - Insert/upsert: `queries/insert_property.sql` (idempotent on `(name, type)`).
@@ -162,8 +191,11 @@ Each operation maps to one canonical query file. Add a new file (and INDEX row) 
 - One `figma_nodes` row per `(reference_type, reference_id)`.
 - One `properties` row per `(name, type)`.
 - One `pages` row per `file_key`.
+- One `atom_variants` / `molecule_variants` row per `(parent_id, figma_node)`.
 - `layout_registry.child_property`, when set, must be Positioning or Spacing (trigger-enforced).
 - `states` is read-only after schema load — pre-seeded with the six allowed values.
+- `content_diff_hash` is the per-entity sync key on atoms/molecules/layouts. Diff dirty when **either** `edited_at` or `content_diff_hash` differs from the freshly observed values.
+- Layouts intentionally have **no** variants table — `layouts.type` (`Mobile`/`Desktop`/`All`) plus a row-per-variant in `layouts` covers the device axis.
 - All FKs cascade on delete (or set null where the parent is optional, e.g. `storybook_id`).
 
 ## What NOT to do

@@ -23,34 +23,43 @@ CREATE TABLE IF NOT EXISTS storybook (
     src_ref   TEXT NOT NULL
 );
 
+-- edited_at         = comment.created_at  (the /baluarte-* annotation timestamp)
+-- content_diff_hash = SHA-256 of the deep document tree returned by /v1/files/{key}/nodes.
+--                     The Figma REST API does NOT expose per-node lastModified, so we hash the
+--                     fetched document JSON instead. Any structural or styling change to the node
+--                     (or its descendants) flips this hash and triggers a re-sync. See
+--                     .claude/skills/baluarte-remember/SKILL.md → "content_diff_hash" for the full rule.
 CREATE TABLE IF NOT EXISTS layouts (
-    uuid         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-    name         TEXT NOT NULL,
-    storybook_id TEXT REFERENCES storybook(uuid) ON DELETE SET NULL,
-    description  TEXT,
-    edited_at    TEXT,
-    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    type         TEXT NOT NULL CHECK (type IN ('Mobile','Desktop','All'))
+    uuid              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    name              TEXT NOT NULL,
+    storybook_id      TEXT REFERENCES storybook(uuid) ON DELETE SET NULL,
+    description       TEXT,
+    edited_at         TEXT,
+    content_diff_hash TEXT,
+    created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    type              TEXT NOT NULL CHECK (type IN ('Mobile','Desktop','All'))
 );
 
 CREATE TABLE IF NOT EXISTS molecules (
-    uuid         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-    name         TEXT NOT NULL,
-    storybook_id TEXT REFERENCES storybook(uuid) ON DELETE SET NULL,
-    description  TEXT,
-    edited_at    TEXT,
-    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    type         TEXT NOT NULL CHECK (type IN ('static','interactive','form'))
+    uuid              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    name              TEXT NOT NULL,
+    storybook_id      TEXT REFERENCES storybook(uuid) ON DELETE SET NULL,
+    description       TEXT,
+    edited_at         TEXT,
+    content_diff_hash TEXT,
+    created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    type              TEXT NOT NULL CHECK (type IN ('static','interactive','form'))
 );
 
 CREATE TABLE IF NOT EXISTS atoms (
-    uuid         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-    name         TEXT NOT NULL,
-    storybook_id TEXT REFERENCES storybook(uuid) ON DELETE SET NULL,
-    description  TEXT,
-    edited_at    TEXT,
-    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    type         TEXT NOT NULL CHECK (type IN ('static','interactive','form'))
+    uuid              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    name              TEXT NOT NULL,
+    storybook_id      TEXT REFERENCES storybook(uuid) ON DELETE SET NULL,
+    description       TEXT,
+    edited_at         TEXT,
+    content_diff_hash TEXT,
+    created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    type              TEXT NOT NULL CHECK (type IN ('static','interactive','form'))
 );
 
 CREATE TABLE IF NOT EXISTS states (
@@ -134,6 +143,33 @@ CREATE TABLE IF NOT EXISTS atoms_properties (
     property_id TEXT NOT NULL REFERENCES properties(uuid) ON DELETE CASCADE,
     state_id    TEXT NOT NULL REFERENCES states(uuid)     ON DELETE CASCADE,
     UNIQUE (atom_id, property_id, state_id)
+);
+
+-- ──────────────────────────── Variants ────────────────────────────
+-- One row per non-default variant of an atom/molecule. The "default" variant is
+-- the parent row in atoms/molecules; these tables remember the side variants
+-- (figma_node + label + optional state) so we can rebuild the variant tree later.
+
+CREATE TABLE IF NOT EXISTS atom_variants (
+    uuid       TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    atom_id    TEXT NOT NULL REFERENCES atoms(uuid) ON DELETE CASCADE,
+    figma_node TEXT NOT NULL,
+    figma_url  TEXT,
+    name       TEXT,
+    variant    TEXT,
+    state_id   TEXT REFERENCES states(uuid) ON DELETE SET NULL,
+    UNIQUE (atom_id, figma_node)
+);
+
+CREATE TABLE IF NOT EXISTS molecule_variants (
+    uuid        TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    molecule_id TEXT NOT NULL REFERENCES molecules(uuid) ON DELETE CASCADE,
+    figma_node  TEXT NOT NULL,
+    figma_url   TEXT,
+    name        TEXT,
+    variant     TEXT,
+    state_id    TEXT REFERENCES states(uuid) ON DELETE SET NULL,
+    UNIQUE (molecule_id, figma_node)
 );
 
 -- ──────────────────────────── Indexes ────────────────────────────

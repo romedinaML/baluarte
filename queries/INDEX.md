@@ -48,31 +48,53 @@ Update queries use the **dynamic COALESCE pattern**: every column appears as `co
 
 | Name | File | Params | Description |
 |---|---|---|---|
-| insert_layout | insert_layout.sql | `:name`, `:storybook_id`, `:description`, `:edited_at`, `:type` | Insert (returns uuid) |
-| select_layout_by_uuid | select_layout_by_uuid.sql | `:uuid` | Fetch one row |
+| insert_layout | insert_layout.sql | `:name`, `:storybook_id`, `:description`, `:edited_at`, `:content_diff_hash`, `:type` | Insert (returns uuid) |
+| select_layout_by_uuid | select_layout_by_uuid.sql | `:uuid` | Fetch one row (incl. `content_diff_hash`) |
+| select_layout_uuid_by_figma_node | select_layout_uuid_by_figma_node.sql | `:figma_node` | Resolve layout uuid by Figma node id |
 | select_layouts_all | select_layouts_all.sql | — | List all layouts |
-| update_layout | update_layout.sql | `:uuid`, `:name`, `:storybook_id`, `:description`, `:edited_at`, `:type` | Dynamic update |
+| list_layouts_with_figma_node | list_layouts_with_figma_node.sql | — | List `(figma_node, uuid, edited_at, content_diff_hash)` for every layout |
+| update_layout | update_layout.sql | `:uuid`, `:name`, `:storybook_id`, `:description`, `:edited_at`, `:content_diff_hash`, `:type` | Dynamic update (COALESCE pattern) |
 | delete_layout | delete_layout.sql | `:uuid` | Cascades to `layout_registry`, `layout_properties`, `pages_registry` |
 
 ### molecules
 
 | Name | File | Params | Description |
 |---|---|---|---|
-| insert_molecule | insert_molecule.sql | `:name`, `:storybook_id`, `:description`, `:edited_at`, `:type` | Insert (returns uuid) |
-| select_molecule_by_uuid | select_molecule_by_uuid.sql | `:uuid` | Fetch one row |
+| insert_molecule | insert_molecule.sql | `:name`, `:storybook_id`, `:description`, `:edited_at`, `:content_diff_hash`, `:type` | Insert (returns uuid) |
+| select_molecule_by_uuid | select_molecule_by_uuid.sql | `:uuid` | Fetch one row (incl. `content_diff_hash`) |
+| select_molecule_uuid_by_figma_node | select_molecule_uuid_by_figma_node.sql | `:figma_node` | Resolve molecule uuid by Figma node id |
 | select_molecules_all | select_molecules_all.sql | — | List all molecules |
-| update_molecule | update_molecule.sql | `:uuid`, `:name`, `:storybook_id`, `:description`, `:edited_at`, `:type` | Dynamic update |
-| delete_molecule | delete_molecule.sql | `:uuid` | Cascades to `molecules_registry`, `molecules_properties` |
+| list_molecules_with_figma_node | list_molecules_with_figma_node.sql | — | List `(figma_node, uuid, edited_at, content_diff_hash)` for every molecule |
+| update_molecule | update_molecule.sql | `:uuid`, `:name`, `:storybook_id`, `:description`, `:edited_at`, `:content_diff_hash`, `:type` | Dynamic update (COALESCE pattern) |
+| delete_molecule | delete_molecule.sql | `:uuid` | Cascades to `molecules_registry`, `molecules_properties`, `molecule_variants` |
 
 ### atoms
 
 | Name | File | Params | Description |
 |---|---|---|---|
-| insert_atom | insert_atom.sql | `:name`, `:storybook_id`, `:description`, `:edited_at`, `:type` | Insert (returns uuid) |
-| select_atom_by_uuid | select_atom_by_uuid.sql | `:uuid` | Fetch one row |
+| insert_atom | insert_atom.sql | `:name`, `:storybook_id`, `:description`, `:edited_at`, `:content_diff_hash`, `:type` | Insert (returns uuid) |
+| select_atom_by_uuid | select_atom_by_uuid.sql | `:uuid` | Fetch one row (incl. `content_diff_hash`) |
+| select_atom_uuid_by_figma_node | select_atom_uuid_by_figma_node.sql | `:figma_node` | Resolve atom uuid by Figma node id |
 | select_atoms_all | select_atoms_all.sql | — | List all atoms |
-| update_atom | update_atom.sql | `:uuid`, `:name`, `:storybook_id`, `:description`, `:edited_at`, `:type` | Dynamic update |
-| delete_atom | delete_atom.sql | `:uuid` | Cascades to `atoms_properties` |
+| list_atoms_with_figma_node | list_atoms_with_figma_node.sql | — | List `(figma_node, uuid, edited_at, content_diff_hash)` for every atom |
+| update_atom | update_atom.sql | `:uuid`, `:name`, `:storybook_id`, `:description`, `:edited_at`, `:content_diff_hash`, `:type` | Dynamic update (COALESCE pattern) |
+| delete_atom | delete_atom.sql | `:uuid` | Cascades to `atoms_properties`, `atom_variants` |
+
+### atom_variants
+
+| Name | File | Params | Description |
+|---|---|---|---|
+| insert_atom_variant | insert_atom_variant.sql | `:atom_id`, `:figma_node`, `:figma_url`, `:name`, `:variant`, `:state_id` | Idempotent upsert by `(atom_id, figma_node)` |
+| list_atom_variants_by_atom | list_atom_variants_by_atom.sql | `:atom_id` | List variants of an atom |
+| delete_atom_variants_by_atom | delete_atom_variants_by_atom.sql | `:atom_id` | Wipe variants before re-syncing |
+
+### molecule_variants
+
+| Name | File | Params | Description |
+|---|---|---|---|
+| insert_molecule_variant | insert_molecule_variant.sql | `:molecule_id`, `:figma_node`, `:figma_url`, `:name`, `:variant`, `:state_id` | Idempotent upsert by `(molecule_id, figma_node)` |
+| list_molecule_variants_by_molecule | list_molecule_variants_by_molecule.sql | `:molecule_id` | List variants of a molecule |
+| delete_molecule_variants_by_molecule | delete_molecule_variants_by_molecule.sql | `:molecule_id` | Wipe variants before re-syncing |
 
 ### states
 
@@ -130,6 +152,7 @@ States are pre-seeded by `schema.sql`. The mutate queries below exist for comple
 | list_layout_registry_by_layout | list_layout_registry_by_layout.sql | `:layout_id` | List a layout's children |
 | update_layout_registry | update_layout_registry.sql | `:uuid`, `:layout_id`, `:child_id`, `:child_type`, `:child_property` | Dynamic update (trigger-checked) |
 | delete_layout_registry | delete_layout_registry.sql | `:uuid` | Delete one row |
+| delete_layout_registry_by_layout | delete_layout_registry_by_layout.sql | `:layout_id` | Wipe a layout's children before re-syncing |
 
 ### layout_properties
 
@@ -152,6 +175,7 @@ States are pre-seeded by `schema.sql`. The mutate queries below exist for comple
 | list_molecules_registry_by_molecule | list_molecules_registry_by_molecule.sql | `:molecule_id` | List a molecule's children |
 | update_molecules_registry | update_molecules_registry.sql | `:uuid`, `:molecule_id`, `:child_id`, `:property_id` | Dynamic update |
 | delete_molecules_registry | delete_molecules_registry.sql | `:uuid` | Delete one row |
+| delete_molecules_registry_by_molecule | delete_molecules_registry_by_molecule.sql | `:molecule_id` | Wipe a molecule's children before re-syncing |
 
 ### molecules_properties
 
