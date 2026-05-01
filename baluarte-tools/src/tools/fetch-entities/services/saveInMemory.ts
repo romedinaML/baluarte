@@ -3,14 +3,14 @@ import { saveLayout } from "../utils/save/saveLayout.js";
 import { saveMolecule } from "../utils/save/saveMolecule.js";
 import type { Buckets } from "../utils/types.js";
 import type { FreshEntities } from "./fetchEntityNodes.js";
-import { loadSaveContext } from "./saveContext.js";
+import type { SaveContext } from "./saveContext.js";
 
 export async function saveInMemory(
   fileId: string,
   fresh: FreshEntities,
   entitiesToUpdate: Buckets,
+  ctx: SaveContext,
 ): Promise<void> {
-  const ctx = await loadSaveContext();
   for (const entry of entitiesToUpdate.atoms) {
     await saveAtom(fileId, entry, fresh.atoms, ctx);
   }

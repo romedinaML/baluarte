@@ -123,8 +123,9 @@ States are pre-seeded by `schema.sql`. The mutate queries below exist for comple
 
 | Name | File | Params | Description |
 |---|---|---|---|
-| insert_property | insert_property.sql | `:name`, `:tailwind_class`, `:css_style`, `:type`, `:origin` | Upsert by `(name, type)` |
-| select_property_by_uuid | select_property_by_uuid.sql | `:uuid` | Fetch one row |
+| insert_property | insert_property.sql | `:name`, `:tailwind_class`, `:css_style`, `:type`, `:origin`, `:figma_variable_id` | Upsert by `(name, type)`. `figma_variable_id` is preserved across Custom re-upserts |
+| select_property_by_uuid | select_property_by_uuid.sql | `:uuid` | Fetch one row (incl. `figma_variable_id`) |
+| select_property_by_figma_variable_id | select_property_by_figma_variable_id.sql | `:figma_variable_id` | Resolve a property by its Figma variable id |
 | select_properties_all | select_properties_all.sql | — | List all properties (ordered by type, name) |
 | update_property | update_property.sql | `:uuid`, `:name`, `:tailwind_class`, `:css_style`, `:type`, `:origin` | Dynamic update |
 | delete_property | delete_property.sql | `:uuid` | Cascades to `*_properties`; sets `*.property_id` NULL on `*_registry` |

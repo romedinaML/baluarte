@@ -82,16 +82,20 @@ CREATE TABLE IF NOT EXISTS figma_nodes (
     UNIQUE (reference_type, reference_id)
 );
 
+-- figma_variable_id is set when origin='Figma Variable' and seeded from
+-- /v1/files/{key}/variables/local. NULL for origin='Custom'. Unique when set so
+-- a future extractor can resolve `boundVariables.<field>.id` back to one row.
 CREATE TABLE IF NOT EXISTS properties (
-    uuid           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-    name           TEXT NOT NULL,
-    tailwind_class TEXT,
-    css_style      TEXT NOT NULL,
-    type           TEXT NOT NULL CHECK (type IN (
+    uuid              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    name              TEXT NOT NULL,
+    tailwind_class    TEXT,
+    css_style         TEXT NOT NULL,
+    type              TEXT NOT NULL CHECK (type IN (
         'Color','Spacing','Font','Typography','Positioning','Grid','Flex',
         'Border','Shadow','Opacity'
     )),
-    origin         TEXT NOT NULL CHECK (origin IN ('Custom','Figma Variable')),
+    origin            TEXT NOT NULL CHECK (origin IN ('Custom','Figma Variable')),
+    figma_variable_id TEXT,
     UNIQUE (name, type)
 );
 
@@ -180,6 +184,8 @@ CREATE INDEX IF NOT EXISTS idx_molecules_name            ON molecules(name);
 CREATE INDEX IF NOT EXISTS idx_atoms_name                ON atoms(name);
 CREATE INDEX IF NOT EXISTS idx_figma_nodes_reference     ON figma_nodes(reference_type, reference_id);
 CREATE INDEX IF NOT EXISTS idx_properties_type           ON properties(type);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_properties_figma_variable_id
+    ON properties(figma_variable_id) WHERE figma_variable_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_pages_registry_page       ON pages_registry(page_id);
 CREATE INDEX IF NOT EXISTS idx_layout_registry_layout    ON layout_registry(layout_id);
 CREATE INDEX IF NOT EXISTS idx_layout_properties_layout  ON layout_properties(layout_id);

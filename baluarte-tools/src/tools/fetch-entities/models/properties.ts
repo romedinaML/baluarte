@@ -13,6 +13,7 @@ export async function upsertProperty(record: PropertyRecord): Promise<string> {
     css_style: record.css_style,
     type: record.type,
     origin: record.origin,
+    figma_variable_id: record.figma_variable_id ?? null,
   });
   if (!rows[0]?.uuid) throw new Error("insert_property returned no uuid");
   cache.set(key, rows[0].uuid);

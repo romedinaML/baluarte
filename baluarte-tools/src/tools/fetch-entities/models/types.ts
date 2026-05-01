@@ -52,4 +52,5 @@ export interface PropertyRecord {
   css_style: string;
   tailwind_class: string | null;
   origin: PropertyOrigin;
+  figma_variable_id?: string | null;
 }

@@ -43,7 +43,7 @@ Single tables:
 | `molecule_variants` | Variants of a molecule: same shape as `atom_variants`, FK to `molecules` |
 | `states` | Pre-seeded: hover, active, stale, disabled, focus, clicked |
 | `figma_nodes` | One row per `(reference_type, reference_id)` — links a layout/molecule/atom to its Figma node + URL |
-| `properties` | Tailwind+CSS visual properties; `type` includes Color, Spacing, Font, Typography, Positioning, Grid, Flex, Border, Shadow, Opacity; `origin ∈ {Custom, Figma Variable}` |
+| `properties` | Tailwind+CSS visual properties; `type` includes Color, Spacing, Font, Typography, Positioning, Grid, Flex, Border, Shadow, Opacity; `origin ∈ {Custom, Figma Variable}`. When `origin='Figma Variable'`, `figma_variable_id` holds the originating Figma variable id (e.g. `VariableID:abc/123`) — unique when set, NULL for `Custom` |
 
 Relationship tables (all with `uuid` PK and `ON DELETE CASCADE`):
 
@@ -168,8 +168,15 @@ Each operation maps to one canonical query file. Add a new file (and INDEX row) 
 - Variant rows do **not** have their own `figma_nodes` row — the parent atom/molecule already owns the canonical figma_node mapping. The variant table stores `figma_node` directly so we can list children without an extra join.
 
 ### Properties
-- Insert/upsert: `queries/insert_property.sql` (idempotent on `(name, type)`).
+- Insert/upsert: `queries/insert_property.sql` (idempotent on `(name, type)`; `figma_variable_id` is preserved across re-upserts via COALESCE so a later Custom write never blanks an earlier Figma-Variable seed).
 - Lookup: `queries/select_property_by_uuid.sql`.
+- Lookup by Figma variable id: `queries/select_property_by_figma_variable_id.sql` — used when resolving `boundVariables.<field>.id` references on a node back to a registered property.
+
+### Pages
+- Upsert: `queries/insert_page.sql` (idempotent on `file_key`).
+- Lookup: `queries/select_page_by_file_key.sql`.
+- Link entity → page: `queries/link_page_child.sql` (idempotent on `(page_id, child_type, child_id)`).
+- **Semantics:** `pages.edited_at` mirrors the file's `lastModified` from `/v1/files/{key}/nodes` (file-wide timestamp). One `pages` row per file (UNIQUE on `file_key`). The `baluarte-fetch-entities` MCP tool populates this automatically as the final pipeline step.
 
 ### States
 - Lookup only: `queries/select_state_by_type.sql`. **Never insert.**
@@ -189,8 +196,8 @@ Each operation maps to one canonical query file. Add a new file (and INDEX row) 
 ## Invariants
 
 - One `figma_nodes` row per `(reference_type, reference_id)`.
-- One `properties` row per `(name, type)`.
-- One `pages` row per `file_key`.
+- One `properties` row per `(name, type)`. `figma_variable_id` is unique when set (partial unique index).
+- One `pages` row per `file_key`. `pages.edited_at` carries the file-wide `lastModified`.
 - One `atom_variants` / `molecule_variants` row per `(parent_id, figma_node)`.
 - `layout_registry.child_property`, when set, must be Positioning or Spacing (trigger-enforced).
 - `states` is read-only after schema load — pre-seeded with the six allowed values.
