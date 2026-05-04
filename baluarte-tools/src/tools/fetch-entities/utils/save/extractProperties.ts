@@ -1,6 +1,17 @@
 import type { PropertyRecord } from "../../models/types.js";
 import type { FigmaColor, FigmaNode, FigmaPaint } from "../types.js";
 
+const VECTOR_TYPES: ReadonlySet<string> = new Set([
+  "VECTOR",
+  "STAR",
+  "POLYGON",
+  "ELLIPSE",
+  "LINE",
+  "BOOLEAN_OPERATION",
+]);
+
+type ColorRole = "text" | "fill" | "bg";
+
 function toHex(c: number): string {
   const v = Math.max(0, Math.min(255, Math.round(c * 255)));
   return v.toString(16).padStart(2, "0");
@@ -30,20 +41,30 @@ function firstSolidPaint(paints?: FigmaPaint[]): FigmaPaint | null {
   return null;
 }
 
+function colorRole(node: FigmaNode): ColorRole {
+  if (node.type === "TEXT") return "text";
+  if (VECTOR_TYPES.has(node.type ?? "")) return "fill";
+  return "bg";
+}
+
+function cssPropForRole(role: ColorRole): string {
+  if (role === "text") return "color";
+  if (role === "fill") return "fill";
+  return "background-color";
+}
+
 function extractColor(node: FigmaNode, out: PropertyRecord[]): void {
   const fill = firstSolidPaint(node.fills);
-  if (fill?.color) {
-    const role = node.type === "TEXT" ? "fg" : "bg";
-    const cssProp = role === "fg" ? "color" : "background-color";
-    const value = colorToRgba(fill.color, fill.opacity ?? 1);
-    out.push({
-      name: `Color-${role}-${colorKey(fill.color, fill.opacity ?? 1)}`,
-      type: "Color",
-      css_style: `${cssProp}: ${value}`,
-      tailwind_class: null,
-      origin: "Custom",
-    });
-  }
+  if (!fill?.color) return;
+  const role = colorRole(node);
+  const value = colorToRgba(fill.color, fill.opacity ?? 1);
+  out.push({
+    name: `Color-${role}-${colorKey(fill.color, fill.opacity ?? 1)}`,
+    type: "Color",
+    css_style: `${cssPropForRole(role)}: ${value}`,
+    tailwind_class: null,
+    origin: "Custom",
+  });
 }
 
 function extractBorder(node: FigmaNode, out: PropertyRecord[]): void {
@@ -52,9 +73,16 @@ function extractBorder(node: FigmaNode, out: PropertyRecord[]): void {
     const value = colorToRgba(stroke.color, stroke.opacity ?? 1);
     const weight = node.strokeWeight ?? 1;
     out.push({
-      name: `Border-${weight}-${colorKey(stroke.color, stroke.opacity ?? 1)}`,
+      name: `Color-stroke-${colorKey(stroke.color, stroke.opacity ?? 1)}`,
+      type: "Color",
+      css_style: `border-color: ${value}`,
+      tailwind_class: null,
+      origin: "Custom",
+    });
+    out.push({
+      name: `Border-width-${weight}`,
       type: "Border",
-      css_style: `border: ${weight}px solid ${value}`,
+      css_style: `border-width: ${weight}px`,
       tailwind_class: null,
       origin: "Custom",
     });
@@ -115,6 +143,50 @@ function extractFlex(node: FigmaNode, out: PropertyRecord[]): void {
       name: `Flex-${direction}`,
       type: "Flex",
       css_style: `display: flex; flex-direction: ${direction}`,
+      tailwind_class: null,
+      origin: "Custom",
+    });
+  }
+}
+
+const JUSTIFY_MAP: Record<string, string> = {
+  MIN: "flex-start",
+  CENTER: "center",
+  MAX: "flex-end",
+  SPACE_BETWEEN: "space-between",
+};
+
+const ITEMS_MAP: Record<string, string> = {
+  MIN: "flex-start",
+  CENTER: "center",
+  MAX: "flex-end",
+  BASELINE: "baseline",
+};
+
+function slugForCssValue(v: string): string {
+  return v.replace(/^flex-/, "").replace(/_/g, "-").toLowerCase();
+}
+
+function extractAlignment(node: FigmaNode, out: PropertyRecord[]): void {
+  if (!node.layoutMode || node.layoutMode === "NONE") return;
+  const primary = node.primaryAxisAlignItems;
+  if (primary && JUSTIFY_MAP[primary]) {
+    const v = JUSTIFY_MAP[primary];
+    out.push({
+      name: `Flex-justify-${slugForCssValue(v)}`,
+      type: "Flex",
+      css_style: `justify-content: ${v}`,
+      tailwind_class: null,
+      origin: "Custom",
+    });
+  }
+  const counter = node.counterAxisAlignItems;
+  if (counter && ITEMS_MAP[counter]) {
+    const v = ITEMS_MAP[counter];
+    out.push({
+      name: `Flex-items-${slugForCssValue(v)}`,
+      type: "Flex",
+      css_style: `align-items: ${v}`,
       tailwind_class: null,
       origin: "Custom",
     });
@@ -182,15 +254,7 @@ function extractOpacity(node: FigmaNode, out: PropertyRecord[]): void {
   }
 }
 
-export function extractProperties(node: FigmaNode): PropertyRecord[] {
-  const out: PropertyRecord[] = [];
-  extractColor(node, out);
-  extractBorder(node, out);
-  extractSpacing(node, out);
-  extractFlex(node, out);
-  extractTypography(node, out);
-  extractShadows(node, out);
-  extractOpacity(node, out);
+function dedupe(out: PropertyRecord[]): PropertyRecord[] {
   const seen = new Set<string>();
   return out.filter((p) => {
     const k = `${p.type}::${p.name}`;
@@ -198,4 +262,38 @@ export function extractProperties(node: FigmaNode): PropertyRecord[] {
     seen.add(k);
     return true;
   });
+}
+
+export function extractProperties(node: FigmaNode): PropertyRecord[] {
+  const out: PropertyRecord[] = [];
+  extractColor(node, out);
+  extractBorder(node, out);
+  extractSpacing(node, out);
+  extractFlex(node, out);
+  extractAlignment(node, out);
+  extractTypography(node, out);
+  extractShadows(node, out);
+  extractOpacity(node, out);
+  return dedupe(out);
+}
+
+// Walks the subtree of `root` and emits Color-text + Typography rows for every
+// TEXT descendant encountered. Non-TEXT children are traversed (so a TEXT node
+// wrapped in a frame still gets picked up), but their non-typography properties
+// are NOT collected — those belong to whichever entity owns them, not to the
+// caller. Used by saveAtom to attribute label typography to the parent atom.
+export function extractFromTextChildren(root: FigmaNode): PropertyRecord[] {
+  const out: PropertyRecord[] = [];
+  function walk(n: FigmaNode): void {
+    for (const child of n.children ?? []) {
+      if (child.type === "TEXT") {
+        extractColor(child, out);
+        extractTypography(child, out);
+        continue;
+      }
+      walk(child);
+    }
+  }
+  walk(root);
+  return dedupe(out);
 }

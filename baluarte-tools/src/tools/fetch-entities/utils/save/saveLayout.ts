@@ -27,7 +27,7 @@ async function upsertLayoutEntity(
     uuid = await insertLayout({
       name: entry.name ?? node.name ?? "Unnamed layout",
       type: deriveLayoutType(node),
-      description: null,
+      description: entry.description ?? null,
       edited_at: entry.updated_at ?? null,
       content_diff_hash: entry.content_diff_hash ?? null,
       storybook_id: null,
@@ -36,6 +36,7 @@ async function upsertLayoutEntity(
   } else {
     await updateLayout(uuid, {
       name: entry.name ?? node.name ?? null,
+      description: entry.description ?? null,
       edited_at: entry.updated_at ?? null,
       content_diff_hash: entry.content_diff_hash ?? null,
     });

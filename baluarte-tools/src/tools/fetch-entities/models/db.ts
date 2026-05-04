@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -48,20 +48,56 @@ let stdoutBuffer = "";
 let chain: Promise<unknown> = Promise.resolve();
 
 let procClosed = false;
+let cachedDbInode: number | null = null;
 
+function currentDbInode(path: string): number | null {
+  try {
+    return statSync(path).ino;
+  } catch {
+    return null;
+  }
+}
+
+// `proc` is reused across calls for throughput, but the cached child holds an
+// open FD on the DB inode it was spawned against. If the on-disk file is
+// hard-reset (`rm .data/baluarte.db*` + reinit), the FD points at a deleted
+// inode and silently swallows reads/writes. Compare inodes per call so the
+// MCP self-heals on external resets.
 function ensureProc(): ChildProcessWithoutNullStreams {
-  if (proc && !proc.killed && !procClosed) return proc;
-  const p = spawn("sqlite3", ["-batch", dbPath()]);
+  const path = dbPath();
+  const inode = currentDbInode(path);
+  if (
+    proc &&
+    !proc.killed &&
+    !procClosed &&
+    cachedDbInode !== null &&
+    cachedDbInode === inode
+  ) {
+    return proc;
+  }
+  if (proc && !procClosed) {
+    try {
+      proc.stdin.end();
+    } catch {
+      // process may have died already; ignore
+    }
+    proc = null;
+    procClosed = true;
+    stdoutBuffer = "";
+  }
+  const p = spawn("sqlite3", ["-batch", path]);
   procClosed = false;
   p.stderr.on("data", (d) => process.stderr.write(`[sqlite3] ${d}`));
   p.on("close", () => {
     procClosed = true;
     proc = null;
     stdoutBuffer = "";
+    cachedDbInode = null;
   });
   p.stdin.write(".mode json\n");
   p.stdin.write("PRAGMA foreign_keys=ON;\n");
   proc = p;
+  cachedDbInode = inode;
   return p;
 }
 

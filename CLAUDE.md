@@ -18,7 +18,7 @@ The `.claude/` directory is **checked into git** so skills are versioned with th
 
 **User-driven contract.** Every baluarte-* skill is invoked manually by the user, operates on exactly ONE node/row, and does NOT auto-recurse. The whitelist of skills another skill may auto-invoke is exactly two: `baluarte-remember` (SQLite read/write) and `baluarte-understand-product` (registry registration — idempotent, surfaces dedup feedback when the node already exists). For every other missing prerequisite, skills surface a copy-pasteable suggested command and let the user run it. Every skill accepts an optional `--prompt "<text>"` flag for free-form guidance (naming overrides, classification hints, copy notes, etc.).
 
-Doc skills (`baluarte-document-{layout,component,property}`) accept either a Figma URL or a `registry_uuid`. When given a URL, they auto-call `baluarte-understand-product` to ensure the registry row exists, then proceed. Build skills require a `registry_uuid` and fail fast for missing prerequisites.
+Doc skills (`baluarte-document-{layout,component,property}`) accept either a Figma URL or a `registry_uuid`. When given a URL, they auto-call `baluarte-understand-product` to ensure the registry row exists, then proceed. The unified `baluarte-build` skill takes scope/name/uuid filters and fails fast for missing prerequisites.
 
 - **`baluarte-orchestrate`** — **status + advisor only** (no execution). Reads SQLite + filesystem and prints a state table plus suggested next-step commands the user can copy-paste. Optional arg is a Figma URL or `registry_uuid` to scope the advice.
 - **`baluarte-remember`** — the only skill that touches `.data/baluarte.db`. Reads/writes pages, layouts, molecules, atoms, properties, states, figma_nodes, storybook entries, and their relationship tables. Runs SQL exclusively via bash `sqlite3` and the `/queries/*.sql` cache (see `/queries/INDEX.md`). Use this for *structured, queryable, cross-session* data.
@@ -30,20 +30,17 @@ Doc skills (`baluarte-document-{layout,component,property}`) accept either a Fig
 
 Doc-skill rule: each of `baluarte-document-{layout,component,property}` reads the `dev_docs_pages` cache and fails fast if missing — pointing the user at `baluarte-create-developers-docs`. Source nodes are read-only — only **clones** of layouts/components ever live in the dev-docs page.
 
-### Build skills (Storybook playground at `baluarte-app/`)
+### Build skill (Storybook playground at `baluarte-app/`)
 
-These skills generate React + TypeScript + Tailwind code from the SQLite registry. They have **no Figma MCP access** — all input comes from `baluarte-remember`.
-
-- **`baluarte-build-setup`** — bootstraps `baluarte-app/` as an isolated npm project: Storybook 10, React latest, Vite, TypeScript, Tailwind v4, shadcn. Adds an `npm run baluarte` wrapper at the repo root. Asks before launching the dev server.
-- **`baluarte-build-component`** — emits `<Name>.tsx` + `<Name>.stories.tsx` for one `components` row. Component-only (rejects layouts and properties). Records `artifact_path`, `source_hash`, `generated_at` for change detection.
-- **`baluarte-build-layout`** — emits a layout component + story for ONE `layouts` row. **Fails fast** if any referenced child component is unbuilt, listing the exact `baluarte-build-component <reg_uuid>` commands the user must run first. Never cascades.
-- **`baluarte-build-properties`** — fully regenerates `baluarte-app/baluarte.tailwind.ts` from `visual_properties`. Each entry carries an inline `// @baluarte uuid=<UUID>` marker. `tailwind.config.ts` (written by `baluarte-build-setup`) imports the sidecar.
+- **`baluarte-build`** — generates and **incrementally patches** the Storybook artifacts inside `baluarte-app/` from the registry. Fetches layouts/molecules/atoms/properties (and their relationship rows) exclusively through `baluarte-remember`, then builds a property/parent dependency graph to compute the dirty set. For each dirty entity it parses the existing `<Name>.tsx`/`<Name>.stories.tsx`, computes a field-level diff (className tokens, prop signature, variant exports, header hash), and applies the *minimum delta* via `Edit` — never a wholesale rewrite. Variants live as additional named exports inside the same `.stories.tsx`. After every per-entity write it calls `baluarte-remember` to upsert a `storybook` row and link it back via the entity's `storybook_id`.
 
 Build-skill rules:
-- All four require `baluarte-build-setup` to have run first (they fail fast if `baluarte-app/` is not set up).
-- All artifacts live inside `baluarte-app/` — the parent's `package.json` only ever gets the `baluarte` and `baluarte:build` script entries.
-- Generated files always include a header comment naming the source `registry_uuid` and `source_hash`. Hand edits will be overwritten on the next regeneration; the SQLite row is the source of truth.
-- **Never cascade into another baluarte-* skill.** Missing prerequisites become fail-fast errors with copy-pasteable suggested commands.
+- The DB is read and written **only** through `baluarte-remember`. The skill itself never opens `.data/baluarte.db`, runs `sqlite3`, or calls any MCP tool.
+- All artifacts live inside `baluarte-app/` under the tier-split layout: `src/layouts/<Name>/`, `src/molecules/<Name>/`, `src/atoms/<Name>/`. Story titles are tier-prefixed (`Layouts/<Name>`, `Molecules/<Name>`, `Atoms/<Name>`).
+- Generated files carry the header `// AUTO-GENERATED by baluarte-build` plus `source`, `uuid`, and `content_diff_hash`. The skill **patches** them in place — re-running with no registry changes is a byte-level no-op. The SQLite row is the source of truth.
+- `baluarte-app/baluarte.tailwind.ts` is the only file rewritten whole (it is a pure projection of `properties`). When a property name changes there, the dependency graph drives className substitutions in every dependent component artifact in the same run.
+- Files that lack the AUTO-GENERATED marker are **never overwritten** — the skill prints the structured diff under `Diffs (manual merge required):` and continues with the rest of the dirty set.
+- **Never cascade into another baluarte-* skill** (besides `baluarte-remember`). Missing prerequisites become fail-fast errors with copy-pasteable suggested commands.
 
 ## Persistence rules
 

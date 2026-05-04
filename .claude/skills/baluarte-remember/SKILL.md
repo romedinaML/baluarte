@@ -7,6 +7,15 @@ description: Read/update/delete structured records in the project SQLite DB (.da
 
 The only skill in this repo that touches `.data/baluarte.db`. Every other skill that needs SQL must call this one. **All SQL runs via bash `sqlite3` — Python is forbidden, and the previous `node:sqlite` escape hatch is removed.**
 
+## Known callers
+
+The following skills are permitted to invoke `baluarte-remember` directly:
+
+- **`baluarte-build`** — generates and incrementally patches the Storybook artifacts in `baluarte-app/`. Reads layouts/molecules/atoms/properties + every `*_properties` and `*_registry` row to build its dependency graph; writes back `storybook` rows and the entity `storybook_id` linkage.
+- Future build / doc skills as they're added.
+
+Every other skill must surface a copy-pasteable `baluarte-remember` command instead of touching `.data/baluarte.db` itself.
+
 ## When to use this skill
 
 Use `baluarte-remember` for **structured, queryable, cross-session** data:

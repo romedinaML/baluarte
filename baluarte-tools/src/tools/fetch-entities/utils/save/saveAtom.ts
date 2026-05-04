@@ -10,7 +10,10 @@ import { findStateUuidByType } from "../../models/states.js";
 import type { FigmaNodeType, StateType } from "../../models/types.js";
 import type { SaveContext } from "../../services/saveContext.js";
 import type { Entry, FigmaNodesResponse, FigmaNode } from "../types.js";
-import { extractProperties } from "./extractProperties.js";
+import {
+  extractFromTextChildren,
+  extractProperties,
+} from "./extractProperties.js";
 import { resolveState } from "./resolveState.js";
 
 const STATE_KEYS: readonly StateType[] = [
@@ -49,7 +52,7 @@ async function upsertAtomEntity(
     uuid = await insertAtom({
       name: entry.name ?? node.name ?? "Unnamed atom",
       type: "static",
-      description: null,
+      description: entry.description ?? null,
       edited_at: entry.updated_at ?? null,
       content_diff_hash: entry.content_diff_hash ?? null,
       storybook_id: null,
@@ -58,6 +61,7 @@ async function upsertAtomEntity(
   } else {
     await updateAtom(uuid, {
       name: entry.name ?? node.name ?? null,
+      description: entry.description ?? null,
       edited_at: entry.updated_at ?? null,
       content_diff_hash: entry.content_diff_hash ?? null,
     });
@@ -78,7 +82,11 @@ async function persistVariantProperties(
   state: { state?: string; variant?: string },
 ): Promise<void> {
   const stateUuid = await resolveState(state);
-  for (const record of extractProperties(node)) {
+  const records = [
+    ...extractProperties(node),
+    ...extractFromTextChildren(node),
+  ];
+  for (const record of records) {
     const propertyUuid = await upsertProperty(record);
     await linkAtomProperty(atomUuid, propertyUuid, stateUuid);
   }

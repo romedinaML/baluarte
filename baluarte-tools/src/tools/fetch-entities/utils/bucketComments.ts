@@ -13,11 +13,12 @@ export function bucketComments(tagged: TaggedComment[]): Buckets {
       continue;
     }
     const stripped = (comment.message ?? "").replace(TAG_RE, "");
-    const { name, variant, state } = parseFlags(stripped);
+    const { name, variant, state, description } = parseFlags(stripped);
     const entry: Entry = { node_id, updated_at: comment.created_at };
     if (name) entry.name = name;
     if (variant) entry.variant = variant;
     if (state) entry.state = state;
+    if (description) entry.description = description;
     if (kind === "layout") buckets.layouts.push(entry);
     else if (kind === "molecule") buckets.molecules.push(entry);
     else buckets.atoms.push(entry);

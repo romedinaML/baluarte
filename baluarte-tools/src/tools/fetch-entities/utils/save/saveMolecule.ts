@@ -52,7 +52,7 @@ async function upsertMoleculeEntity(
     uuid = await insertMolecule({
       name: entry.name ?? node.name ?? "Unnamed molecule",
       type: "static",
-      description: null,
+      description: entry.description ?? null,
       edited_at: entry.updated_at ?? null,
       content_diff_hash: entry.content_diff_hash ?? null,
       storybook_id: null,
@@ -61,6 +61,7 @@ async function upsertMoleculeEntity(
   } else {
     await updateMolecule(uuid, {
       name: entry.name ?? node.name ?? null,
+      description: entry.description ?? null,
       edited_at: entry.updated_at ?? null,
       content_diff_hash: entry.content_diff_hash ?? null,
     });

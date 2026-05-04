@@ -23,6 +23,7 @@ export interface Entry {
   content_diff_hash?: string | null;
   variant?: string;
   state?: string;
+  description?: string;
   variants?: Entry[];
 }
 
