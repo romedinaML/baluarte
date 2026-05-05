@@ -5,8 +5,8 @@
 // Tailwind classes (bg-blte-*, text-blte-*, pt-blte-*, rounded-blte-*,
 // shadow-blte-*, font-blte-*, leading-blte-*, tracking-blte-*) cannot
 // collide with Tailwind's built-in palette / spacing / radius / shadow
-// names. Tailwind built-ins (`flex flex-row`, `items-center`,
-// `justify-center`) are NOT prefixed and not registered here.
+// names. Tailwind built-ins (`flex flex-row`, `flex flex-col`,
+// `items-center`, `justify-center`) are NOT prefixed and not registered here.
 
 export const baluarteTheme = {
   colors: {
@@ -16,7 +16,11 @@ export const baluarteTheme = {
     'blte-blue-700': '#1e64aa', // @baluarte uuid=4d93f7c5905b7324aff2f1c64ae23945
     'blte-c-000000': '#000000', // @baluarte uuid=6d3f780bd38e45ea06b0671c74b30ab1
     'blte-c-131313': '#131313', // @baluarte uuid=d795dcd56c9ad3f23761c499a44cd089
+    'blte-c-202020': '#202020', // @baluarte uuid=758b5c1ea58a225bdba510bc6beefd8b
     'blte-c-212121': '#212121', // @baluarte uuid=a7eb4dfbf2cea71db3af4d0163ab5ba2
+    'blte-c-79b9f3': '#79b9f3', // @baluarte uuid=1a45c77eb7fbf2783c4bb050df05b3fc
+    'blte-c-79b9f3-a20': 'rgba(121, 185, 243, 0.2)', // @baluarte uuid=cfa5d1fabed3ff396afba8c88696d7dd
+    'blte-c-79b9f3-a50': 'rgba(121, 185, 243, 0.5)', // @baluarte uuid=c7e612f40bddf030a1da7b8ae5465a1f
     'blte-c-edf3fa': '#edf3fa', // @baluarte uuid=923dc3a2a42554bc5a02a583ad37102d
     'blte-c-f3ef81': '#f3ef81', // @baluarte uuid=ba6ec98cdf95000ebd0367064d6885f3
     'blte-core-grey-500': '#e0e0e0', // @baluarte uuid=d007b1d535ff3eb62a1cc921ab6e511a
@@ -54,24 +58,32 @@ export const baluarteTheme = {
     'blte-13': '13px',   // @baluarte uuids=44ce107f992d0b514ea5719d557a6acf
     'blte-13.57': '13.571428298950195px', // @baluarte uuid=893c9777ea1fcf0218fe08b436a1f3f8
     'blte-15': '15px',   // @baluarte uuids=55bd05e9bad9f16fc2ca0f690f36c1f3,b3d9ef6832ac1287e79ed0aee15ededd
+    'blte-16': '16px',   // @baluarte uuids=bcae61ad3c87bd37f3485281c8390f04,5b945d836b6cf481c15221bff6eabe19,447aff50f996aa4aeacb9222f8d0aa89,b9b5d3ddd123d8a5de61eac60525cf1d
+    'blte-17': '17px',   // @baluarte uuid=f68a197a71bc2d33fa5a730aa0e0d767
   },
   borderRadius: {
     'blte-10': '10px', // @baluarte uuid=e501de1d44a876ce981cb04a9404d670
     'blte-11': '11px', // @baluarte uuid=835277b6d3373dfa2a4682cda82d4e10
     'blte-24': '24px', // @baluarte uuid=5773aeaf18cf6e1f7e6a9b96ca197cab
     'blte-30': '30px', // @baluarte uuid=f37681649379c62de281065f25529a07
+    'blte-40': '40px', // @baluarte uuid=f5e4c4a2fbe228e07c9a78f9fbe73613
+  },
+  borderWidth: {
+    'blte-1': '1px', // @baluarte uuid=6015541be7aed110d493cc0f55d8f779
   },
   fontFamily: {
     'blte-feature-deck-trial': ['Feature Deck Trial', 'sans-serif'], // @baluarte uuid=757490fdf4a00c830b62bd7e05e1fb75
+    'blte-pp-neue-montreal': ['PP Neue Montreal', 'sans-serif'], // @baluarte uuid=d0b04d206e52f95b1220ea0d5cc49bc4
     'blte-sequel-sans': ['Sequel Sans', 'sans-serif'], // @baluarte uuid=324d37263c0e42a139edbab745668f92
   },
   fontSize: {
     'blte-feature-deck-trial-16': ['16px', { lineHeight: '15.199999809265137px', letterSpacing: '-0.32px' }], // @baluarte uuid=757490fdf4a00c830b62bd7e05e1fb75
+    'blte-pp-neue-montreal-14': ['14px', { lineHeight: '23.80000114440918px', letterSpacing: '0.14px' }], // @baluarte uuid=d0b04d206e52f95b1220ea0d5cc49bc4
     'blte-sequel-sans-14': ['14px', { lineHeight: '16.51999855041504px', letterSpacing: '-0.14px' }], // @baluarte uuid=324d37263c0e42a139edbab745668f92
   },
   fontWeight: {
     'blte-w-305': '305', // @baluarte uuid=324d37263c0e42a139edbab745668f92
-    'blte-w-400': '400', // @baluarte uuid=757490fdf4a00c830b62bd7e05e1fb75
+    'blte-w-400': '400', // @baluarte uuids=757490fdf4a00c830b62bd7e05e1fb75,d0b04d206e52f95b1220ea0d5cc49bc4
   },
   lineHeight: {},
   boxShadow: {
@@ -79,6 +91,7 @@ export const baluarteTheme = {
   },
   _other: {
     // Flex-row → `flex flex-row` (Tailwind built-in) // @baluarte uuid=74c27535efd1f947573241fed2e20879
+    // Flex-column → `flex flex-col` (Tailwind built-in) // @baluarte uuid=1a7cd6cd105ab4fcdf6d0659cad17761
     // Flex-items-center → `items-center` (Tailwind built-in) // @baluarte uuid=039657fe3559aaf5139eed46e432b721
     // Flex-justify-center → `justify-center` (Tailwind built-in) // @baluarte uuid=c57fe862b1154fd5150ff00e03e8ba6c
   },

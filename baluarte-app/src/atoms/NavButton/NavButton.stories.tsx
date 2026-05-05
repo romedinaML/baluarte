@@ -39,7 +39,11 @@ export const Active: Story = {
 // Honors the entity description: a click toggles the active state via useState
 // and fires `onClick` so the Storybook Actions panel logs the navigation.
 export const Interactive: Story = {
-  args: { label: 'Home', onClick: fn() },
+  args: {
+    label: "Rodrigo",
+    onClick: fn(),
+    state: "active"
+  },
   render: (args) => {
     const [active, setActive] = useState(false);
     return (

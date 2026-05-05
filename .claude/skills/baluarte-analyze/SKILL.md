@@ -41,8 +41,11 @@ If the first argument isn't a Figma URL, fail fast with the expected pattern and
 1. **Parse the args.** Required first positional must match `https://www\.figma\.com/(?:file|design)/(?<key>[A-Za-z0-9]+)` — on no match, error out with the expected URL shape and stop. Recognise the optional `--with-build` boolean (presence-only; no value). Any other unrecognised flag is an error.
 2. **Invoke the MCP tool.** Call `mcp__baluarte-tools__baluarte-fetch-entities` with `FIGMA_FILE: "<file-key>"`. Wait for completion. The tool internally:
    - Seeds local Figma variables → `properties` (`origin='Figma Variable'`).
-   - Reads `/baluarte-layout`, `/baluarte-molecule`, `/baluarte-atom` comments.
-   - Diffs against the registry (comment timestamp + content hash).
+   - Reads `/baluarte-layout`, `/baluarte-molecule`, `/baluarte-atom` tags from **two parallel sources**:
+     - **Comments** (`/v1/files/{key}/comments`) — threaded; `applyLatestReply` picks the latest reply per thread.
+     - **Annotations** (`/v1/files/{key}/annotations`) — flat; `modified_at` is the freshness signal.
+     When the same node is tagged in both, the **annotation wins** (full replace, even across kinds). Annotations missing the endpoint (plan-tier limitations) degrade gracefully — the MCP logs the 4xx and continues with comments only.
+   - Diffs against the registry (timestamp + content hash).
    - Deep-fetches the changed nodes, persists `figma_nodes`, `layouts`/`molecules`/`atoms`, variants, properties, and `pages_registry`.
 3. **Summarize the response.** The tool returns JSON `{ layouts, molecules, atoms }` of the entities that were written this run. Report counts plus the names/node ids of the changed entities. If all three buckets are empty, report "no changes — file is already in sync."
 4. **Chain into `baluarte-build` if `--with-build` was set** AND the MCP returned without an error. Invoke the `Skill` tool with `skill=baluarte-build` and no extra args (default `--scope all`). The build's own Plan + per-tier summary is appended to this run's output verbatim. If the MCP errored or `--with-build` was absent, do not call `baluarte-build` — just print the analyze summary and stop.

@@ -14,7 +14,7 @@ export function bucketComments(tagged: TaggedComment[]): Buckets {
     }
     const stripped = (comment.message ?? "").replace(TAG_RE, "");
     const { name, variant, state, description } = parseFlags(stripped);
-    const entry: Entry = { node_id, updated_at: comment.created_at };
+    const entry: Entry = { node_id, updated_at: comment.created_at, source: "comment" };
     if (name) entry.name = name;
     if (variant) entry.variant = variant;
     if (state) entry.state = state;
