@@ -38,6 +38,9 @@ Thumbs.db
 # Local-only Claude settings (project-shared .claude/ is tracked)
 .claude/settings.local.json
 
+# Per-user prose notes (CLAUDE.md convention)
+MEMORY.md
+
 *storybook.log
 storybook-static
 .mcp.json
