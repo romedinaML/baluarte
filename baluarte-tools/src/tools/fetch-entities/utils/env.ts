@@ -1,4 +1,9 @@
-import "dotenv/config";
+import { config } from "dotenv";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+config({ path: resolve(__dirname, "../../../../.env") });
 
 export const FIGMA_API_URL = "https://api.figma.com";
 
