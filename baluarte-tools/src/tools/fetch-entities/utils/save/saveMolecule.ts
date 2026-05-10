@@ -66,6 +66,20 @@ async function upsertMoleculeEntity(
       content_diff_hash: entry.content_diff_hash ?? null,
     });
   }
+  // For COMPONENT_SET molecules, also map each child variant's id to the
+  // same molecule uuid. INSTANCEs of the molecule inside layouts (or
+  // other molecules, in theory) carry `componentId` pointing to a
+  // variant (a child COMPONENT inside the SET), not the SET id. Without
+  // this, `lookupChild(ctx.molecules, instance)` misses for every
+  // variant-bearing molecule — only single-COMPONENT molecules link.
+  // Mirrors the same fix applied to atoms in saveAtom.
+  if (node.type === "COMPONENT_SET" && Array.isArray(node.children)) {
+    for (const variant of node.children) {
+      if (variant.type === "COMPONENT" && variant.id) {
+        ctx.molecules.set(variant.id, uuid);
+      }
+    }
+  }
   await upsertFigmaNode({
     figma_node: node.id,
     figma_url: buildFigmaUrl(fileId, node.id),
