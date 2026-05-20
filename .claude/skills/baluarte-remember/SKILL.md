@@ -44,8 +44,8 @@ Single tables:
 |---|---|
 | `pages` | Figma files (`file_key` unique) |
 | `storybook` | Generated Storybook entries (name, urls, src ref) |
-| `layouts` | Layouts (artboards whose name contains the token `screen`). Carries `edited_at` and `content_diff_hash` |
-| `components` | Components — single tier replacing the prior atom + molecule split. Same `edited_at` + `content_diff_hash` semantics |
+| `layouts` | Layouts (artboards whose name contains the token `screen`). Carries `description`, `intent_json`, `edited_at`, `content_diff_hash` |
+| `components` | Components — single tier replacing the prior atom + molecule split. Same `description` + `intent_json` + `edited_at` + `content_diff_hash` semantics as `layouts` |
 | `component_variants` | Variants of a component: `(component_id, figma_node)` unique, plus `name`, `variant`, optional `state_id` |
 | `states` | Pre-seeded: hover, active, stale, disabled, focus, clicked |
 | `figma_nodes` | One row per `(reference_type, reference_id)` — links a layout/component to its Figma node + URL. `reference_type ∈ {layout, component}` |
@@ -63,9 +63,47 @@ Relationship tables (all with `uuid` PK and `ON DELETE CASCADE`):
 
 `states` is pre-seeded by `schema.sql` — never insert state rows; look them up via `select_state_by_type`.
 
+### `intent_json` (layouts / components)
+
+A nullable TEXT column on `layouts` and `components` carrying a JSON blob with **structured design intent** that survives the round-trip from `baluarte-design` (writer) → `baluarte-analyze` (extractor) → `baluarte-build` (consumer). Schema-less by design — JSON-encoded — but the conventional shape is:
+
+```json
+{
+  "prompt":      "<original /baluarte-design request, verbatim>",
+  "scrollable":  "x" | "y" | null,
+  "min_width":   <number-of-px> | null,
+  "max_width":   <number-of-px> | null,
+  "interactivity": [
+    { "event": "click" | "hover" | "focus", "target_state": "hover" | "active" | "clicked" | ... }
+  ],
+  "css_utilities": ["overflow-x-hidden", "snap-x", "snap-mandatory"],
+  "notes":       "<free-form additional context>"
+}
+```
+
+Lifecycle:
+- **Written by `baluarte-design`** — the original user prompt is recorded into the Figma node's native `.description` field AND `setSharedPluginData('baluarte','intent_v1', json)` at design time.
+- **Drained by `baluarte-analyze`** — at every sync, merges Figma node description + plugin data + structural hints from `globalVars` (overflowScroll → scrollable; fixed sizing → min_width) and writes the result via `update_component` / `update_layout`.
+- **Read by `baluarte-build`** — `intent_json` drives Tailwind className additions (`overflow-x-auto`, `min-w-[Npx]`, etc.) and triggers auto-emission of an `Interactive` Storybook story when `intent_json.interactivity` is non-empty.
+- **NULL is a valid state** — components without intent (legacy rows, structural-only artboards) render with no intent-derived classes and no `Interactive` story.
+
+The COALESCE pattern in `update_component` / `update_layout` means callers passing `:intent_json=NULL` preserve the existing value; passing a JSON string overwrites. To explicitly clear an intent, pass the literal JSON string `'null'` (TEXT NULL via SQL).
+
 ### `content_diff_hash` (layouts / components)
 
-Per-entity SHA-256 over the deep document tree returned by the Figma MCP (`figma__get_figma_node`). The Figma API does **not** expose a per-node `lastModified`, so we hash the fetched JSON and treat any change in the hash as "the design changed."
+Per-entity SHA-256 over a **composite fingerprint** of the artboard:
+
+```
+content_diff_hash = SHA256(
+  structural_fingerprint(nodeId | name | type | children | lastModified)
+  + "|intent="
+  + canonical_intent_string
+)
+```
+
+where `canonical_intent_string` is the `setSharedPluginData('baluarte','intent_v1')` payload when non-empty, or the `@baluarte intent:` annotation label otherwise, or `""` when neither is set.
+
+This is intentional: the Figma API does not expose a per-node `lastModified`, so we hash the structural shape; folding the intent payload into the same hash means any designer edit to the annotation prose flips it too. **Both `baluarte-analyze` (dirty detection) and `baluarte-build` (regen detection) read the same hash**, so intent changes propagate through the entire pipeline via one signal.
 
 Lifecycle:
 - **Compute:** `baluarte-analyze` hashes the node tree after the MCP fetch and writes the result on every save.
@@ -162,7 +200,7 @@ Each operation maps to one canonical query file. Add a new file (and INDEX row) 
 - Insert: `queries/insert_storybook.sql`.
 
 ### Layouts / Components
-- Insert: `queries/insert_layout.sql`, `queries/insert_component.sql` (each accepts `:content_diff_hash`).
+- Insert: `queries/insert_layout.sql`, `queries/insert_component.sql` (each accepts `:intent_json` and `:content_diff_hash`).
 - Lookup: `queries/select_layout_by_uuid.sql`, `queries/select_component_by_uuid.sql`.
 - Lookup by Figma node id: `select_layout_uuid_by_figma_node.sql`, `select_component_uuid_by_figma_node.sql`.
 - Bulk diff list: `list_layouts_with_figma_node.sql`, `list_components_with_figma_node.sql` — each row carries `(figma_node, uuid, edited_at, content_diff_hash)` for cheap diffing.

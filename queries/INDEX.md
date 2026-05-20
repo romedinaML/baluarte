@@ -51,24 +51,24 @@ Update queries use the **dynamic COALESCE pattern**: every column appears as `co
 
 | Name | File | Params | Description |
 |---|---|---|---|
-| insert_layout | insert_layout.sql | `:name`, `:storybook_id`, `:description`, `:edited_at`, `:content_diff_hash` | Insert (returns uuid) |
-| select_layout_by_uuid | select_layout_by_uuid.sql | `:uuid` | Fetch one row (incl. `content_diff_hash`) |
+| insert_layout | insert_layout.sql | `:name`, `:storybook_id`, `:description`, `:intent_json`, `:edited_at`, `:content_diff_hash` | Insert (returns uuid). `:intent_json` is a JSON blob carrying structured design intent (scrollable/min_width/max_width/interactivity[]/prompt). |
+| select_layout_by_uuid | select_layout_by_uuid.sql | `:uuid` | Fetch one row (incl. `intent_json`, `content_diff_hash`) |
 | select_layout_uuid_by_figma_node | select_layout_uuid_by_figma_node.sql | `:figma_node` | Resolve layout uuid by Figma node id |
-| select_layouts_all | select_layouts_all.sql | — | List all layouts |
+| select_layouts_all | select_layouts_all.sql | — | List all layouts (incl. `intent_json`) |
 | list_layouts_with_figma_node | list_layouts_with_figma_node.sql | — | List `(figma_node, uuid, edited_at, content_diff_hash)` for every layout |
-| update_layout | update_layout.sql | `:uuid`, `:name`, `:storybook_id`, `:description`, `:edited_at`, `:content_diff_hash` | Dynamic update (COALESCE pattern) |
+| update_layout | update_layout.sql | `:uuid`, `:name`, `:storybook_id`, `:description`, `:intent_json`, `:edited_at`, `:content_diff_hash` | Dynamic update (COALESCE pattern). Pass NULL `:intent_json` to preserve, JSON string to overwrite. |
 | delete_layout | delete_layout.sql | `:uuid` | Cascades to `layout_registry`, `layout_properties`, `pages_registry` |
 
 ### components
 
 | Name | File | Params | Description |
 |---|---|---|---|
-| insert_component | insert_component.sql | `:name`, `:storybook_id`, `:description`, `:edited_at`, `:content_diff_hash` | Insert (returns uuid) |
-| select_component_by_uuid | select_component_by_uuid.sql | `:uuid` | Fetch one row (incl. `content_diff_hash`) |
+| insert_component | insert_component.sql | `:name`, `:storybook_id`, `:description`, `:intent_json`, `:edited_at`, `:content_diff_hash` | Insert (returns uuid). `:intent_json` is a JSON blob carrying structured design intent (scrollable/min_width/max_width/interactivity[]/prompt). |
+| select_component_by_uuid | select_component_by_uuid.sql | `:uuid` | Fetch one row (incl. `intent_json`, `content_diff_hash`) |
 | select_component_uuid_by_figma_node | select_component_uuid_by_figma_node.sql | `:figma_node` | Resolve component uuid by Figma node id |
-| select_components_all | select_components_all.sql | — | List all components |
+| select_components_all | select_components_all.sql | — | List all components (incl. `intent_json`) |
 | list_components_with_figma_node | list_components_with_figma_node.sql | — | List `(figma_node, uuid, edited_at, content_diff_hash)` for every component |
-| update_component | update_component.sql | `:uuid`, `:name`, `:storybook_id`, `:description`, `:edited_at`, `:content_diff_hash` | Dynamic update (COALESCE pattern) |
+| update_component | update_component.sql | `:uuid`, `:name`, `:storybook_id`, `:description`, `:intent_json`, `:edited_at`, `:content_diff_hash` | Dynamic update (COALESCE pattern). Pass NULL `:intent_json` to preserve, JSON string to overwrite. |
 | delete_component | delete_component.sql | `:uuid` | Cascades to `components_properties`, `components_registry`, `component_variants` |
 
 ### component_variants

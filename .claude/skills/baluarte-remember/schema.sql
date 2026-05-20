@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS layouts (
     name              TEXT NOT NULL,
     storybook_id      TEXT REFERENCES storybook(uuid) ON DELETE SET NULL,
     description       TEXT,
+    intent_json       TEXT,
     edited_at         TEXT,
     content_diff_hash TEXT,
     created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -40,11 +41,16 @@ CREATE TABLE IF NOT EXISTS layouts (
 
 -- Single component tier — replaces the previous atoms + molecules split.
 -- A component may compose other components (see components_registry).
+-- intent_json is a nullable JSON blob carrying structured design intent
+-- (scrollable, min_width, max_width, interactivity[], prompt). Written by
+-- baluarte-analyze after merging Figma's setSharedPluginData('baluarte',
+-- 'intent_v1') with description tags and structural globalVars hints.
 CREATE TABLE IF NOT EXISTS components (
     uuid              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     name              TEXT NOT NULL,
     storybook_id      TEXT REFERENCES storybook(uuid) ON DELETE SET NULL,
     description       TEXT,
+    intent_json       TEXT,
     edited_at         TEXT,
     content_diff_hash TEXT,
     created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP

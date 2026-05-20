@@ -168,9 +168,171 @@ Plus a `Default` export (an alias of the row's "primary" state — `stale` unles
 
 The kebab-case version of `meta.title` is the slug for `url_local` (`http://localhost:6006/?path=/story/<slug>--default`).
 
-### 8. Entity `description` handling
+### 8. Entity intent handling (`intent_json` + `description`)
 
-Every layout/component row carries an optional `description` column. When non-NULL:
+Every layout/component row carries two channels of design intent: the **structured `intent_json`** column (a JSON blob with parseable fields) and the **prose `description`** column (the original `/baluarte-design` prompt, verbatim). Precedence: **`intent_json` wins** when a field is present; otherwise fall back to scanning `description` per the vocabulary table.
+
+#### 8.invariant. Two-class taxonomy (NEVER violate)
+
+Every Tailwind class the build emits falls into exactly **one** of two buckets, decided mechanically (no judgment):
+
+| Bucket | Source | Storage | Destination |
+|---|---|---|---|
+| **Custom design token** | row in `properties` table (Figma Variable or Custom) | `baluarte.tailwind.ts` under the `blte-` namespace + `// @baluarte uuid=…` annotation | className uses `bg-blte-<slug>`, `pt-blte-<n>`, etc. |
+| **Ambient utility** | built-in Tailwind class for a stable, browser-level CSS concept (overflow, display, position, sizing, whitespace, truncation, snap, cursor, ring, transition) | **Never** enters `properties` or `baluarte.tailwind.ts` | Goes directly on the component's className string |
+
+**Decision rule, per class:** does the value vary by design system (color shade, spacing scale, brand radius)? If yes → custom token. If no — the class encodes a CSS *behavior* that's the same across every design system (`overflow-x-hidden`, `truncate`, `snap-x`) — ambient utility.
+
+The build NEVER promotes an ambient utility into `properties`, and NEVER asks the user about this — it's hard-coded. See "What NOT to do" at the bottom of this skill for the explicit forbidden action.
+
+#### 8.0. Structured intent (`intent_json`) → concrete output
+
+When `intent_json` is non-NULL, parse it and apply each field:
+
+| `intent_json` field | Build output |
+|---|---|
+| `scrollable: 'x'` | Add `overflow-x-auto` to the relevant inner-scroll container className (the parent's flex-row child that holds the scrollable list). Layouts with one auto-layout row are the default target. |
+| `scrollable: 'y'` | Add `overflow-y-auto` to the relevant inner-scroll container className. |
+| `min_width: <N>` | Add `min-w-[Npx]` to the component's root container className. |
+| `max_width: <N>` | Add `max-w-[Npx]` to the component's root container className. |
+| `interactivity: [...]` (non-empty) | **Auto-emit an `Interactive` Storybook export** — see §6.5. |
+| `css_utilities: [...]` (non-empty) | Append each utility verbatim to the className of the scope inferred per §8.5. NEVER register these as `properties` rows — they are ambient (see §8.invariant). |
+| `prompt: "..."` | Surface in the JSDoc `@description` line (replaces the description-column path when both exist; otherwise the description prose is used directly). |
+
+When `intent_json` is NULL, the prose-description path (§8.b–d) is the only signal.
+
+#### 8.5. Auto-emit `Interactive` story when `intent_json.interactivity` is non-empty
+
+In `<Name>.stories.tsx`, append one named export `Interactive` that wires real state transitions:
+
+```tsx
+import { useState } from 'react';
+
+export const Interactive: Story = {
+  render: () => {
+    const [state, setState] = useState<<StateType>>('stale');
+    return (
+      <<Component>
+        state={state}
+        {/* one handler per intent_json.interactivity entry */}
+        onMouseEnter={() => setState('hover')}
+        onMouseLeave={() => setState('stale')}
+        onClick={() => setState('active')}
+        // ...etc, derived from each {event, target_state} pair
+      />
+    );
+  },
+};
+```
+
+Mapping rules:
+- `event: 'click'` → `onClick`
+- `event: 'hover'` → `onMouseEnter` (to target_state) + `onMouseLeave` (back to `stale`)
+- `event: 'focus'` → `onFocus` + `onBlur`
+- Multi-entry intent merges handlers on the same render function.
+
+When the component doesn't already accept event-handler props in its `.tsx`, also patch the prop interface and forward the handlers to the rendered root element. This is one of the few cases where the `.tsx` file is mutated alongside the story — the diff is recorded in the per-tier digest as `interactive: +<events>`.
+
+Static per-state stories (`Stale`, `Hover`, `Active`, etc.) stay alongside `Interactive` — visual regression diffs aren't disturbed.
+
+#### 8.5b. Scope inference for `intent_json.css_utilities`
+
+When applying each utility from `intent_json.css_utilities`, route it to the element by **kind**, not by position. The annotation is prose-only — designers never write `root:` / `scroll:` prefixes. The build uses this table:
+
+| Utility kind | Routed to |
+|---|---|
+| `overflow-*` / `scroll-*` / `snap-x` / `snap-mandatory` | Inner scroll wrapper if one exists (the flex-row child driven by `intent_json.scrollable`), else root |
+| `snap-start` / `snap-center` / `snap-end` | Each rendered child of the scroll wrapper (e.g. each `<Card>` inside a `.map(...)`) |
+| `min-w-*` / `max-w-*` / `w-*` / `h-*` / `min-h-*` / `max-h-*` | Root container |
+| `rounded-*` / `border-*` / `shadow-*` / `ring-*` | Root container |
+| `text-*` / `whitespace-*` / `truncate` / `font-*` / `tracking-*` / `leading-*` | The text-rendering child (`<h1>`/`<h2>`/`<h3>`/`<p>`/`<span>` that holds the prose) when one is identifiable; else root |
+| `cursor-*` / `pointer-events-*` | The interactive element (`<button>`/`<a>`) if present; else root |
+| `transition-*` / `duration-*` / `ease-*` | Interactive element if present (state-driven animations); else root |
+| Anything else | Root container (default) |
+
+Audit each routing decision: `css_utilities: +<class> → <scope>` in the per-tier digest.
+
+#### 8.a. Entity `description` handling — process every segment (REQUIRED)
+
+Replaces the legacy "default to act" rule. The build MUST attempt to map **every prose segment** in `description` to either a structured `intent_json` field or a `css_utilities[]` entry. No segment is silently dropped.
+
+**Step 1 — Parse the prose into segments.** Split `description` on sentence boundaries (`. ` / `! ` / `? ` / blank line) and on `@tag:` line breaks. Each non-empty segment becomes a candidate intent fragment.
+
+**Step 2 — For each segment, attempt mapping with one of three confidence outcomes:**
+
+- **Confidence: high** — segment matches the vocabulary table verbatim or near-verbatim. Apply directly. Audit: `description: +<class>`. When the matched output is a structured field already present in `intent_json` (e.g. segment says "min width 760" and `intent_json.min_width=760`), no-op the segment — it's already covered.
+
+- **Confidence: proposed** — segment is recognizable but multiple utilities plausibly fit (e.g. "scroll cards but clip the overflow" → `overflow-x-hidden` vs `overflow-x-clip` vs `snap-x snap-mandatory`). **Use `AskUserQuestion` inline.** Provide the recommended utility as the first option (with `(Recommended)` suffix on the label) plus 2–3 plausible alternatives. The chosen utility is appended to `intent_json.css_utilities[]`. Audit: `description: +<class> (resolved via clarification)`.
+
+- **Confidence: low** — segment is genuinely ambiguous or off-domain (e.g. "make this feel premium", "match the marketing site"). **Use `AskUserQuestion` inline** with options framed as "describe the CSS behavior plainly" — accept free-form prose via the Other option, then re-attempt mapping on the new prose. If still unresolved, persist a `notes` entry on the entity and skip the segment. Audit: `description: skip — <reason>` and surface to the user in the per-tier digest.
+
+**Step 3 — Vocabulary table** (mappings the build applies at confidence-high; extend over time):
+
+| Description vocabulary | Tailwind utility | Notes |
+|---|---|---|
+| "should not be full width" / "fits its content" / "shrinks to content" | `w-fit` *or* swap `flex` → `inline-flex` | Block-level flex still fills cross-axis; needs explicit class. |
+| "should fill" / "span the full width" | `w-full` | |
+| "max width N" / "no wider than N" | `max-w-[Npx]` | Arbitrary-value syntax for off-scale numbers. |
+| "min width N" | `min-w-[Npx]` | |
+| "max height N" / "at most N tall" | `max-h-[Npx]` | |
+| "min height N" / "at least N tall" | `min-h-[Npx]` | |
+| "fixed width N" / "exactly N wide" | `w-[Npx]` | |
+| "centered text" / "horizontally centered" | `text-center` | |
+| "right-aligned" | `text-right` | |
+| "should be inline" / "shouldn't break" | `inline-block` / `whitespace-nowrap` | |
+| "truncate" / "ellipsis on overflow" | `truncate` | |
+| "wraps to multiple lines" | `whitespace-normal` | |
+| "circular" / "fully rounded" | `rounded-full` | |
+| "fixed at top" / "sticky" | `fixed top-0` / `sticky top-0` | |
+| "hide overflow" / "clip overflow" / "hidden when overflowed" / "no scrollbar" | `overflow-hidden` (or `overflow-x-hidden` / `overflow-y-hidden` when axis is implied) | Ambient — never registered. |
+| "scroll snap" / "snap to items" / "carousel-style" | `snap-x snap-mandatory` on parent + `snap-start` on each child | Ambient. Routes via §8.5b. |
+| "no wrap" / "single line" / "shouldn't break across lines" | `whitespace-nowrap` | Ambient. |
+| "rotate <N> degrees" | `rotate-[<N>deg]` | Arbitrary-value syntax. |
+| "transitions smoothly" / "animate property changes" | `transition-all duration-150` | Ambient. |
+| "no pointer cursor" / "disabled cursor" / "not clickable" | `cursor-not-allowed` | Ambient. |
+| "no interaction" / "ignore clicks" | `pointer-events-none` | Ambient. |
+
+For description vocabulary not in the table, propose a utility that honors the intent (Confidence: proposed). Use arbitrary-value brackets for off-scale numbers. **Description-derived classes are never registered in `baluarte.tailwind.ts` — they are ambient per §8.invariant.**
+
+**Step 4 — Persist the resolved utilities and write back to Figma.**
+
+After the inference loop finishes for an entity:
+
+1. **Persist to DB.** Call `baluarte-remember` to `update_component` (or `update_layout`) with the new `:intent_json` containing the merged `css_utilities` array. The composite `content_diff_hash` already includes the canonical intent string, so the hash is bumped automatically when this round-trip is complete.
+
+2. **Write back to the Figma annotation.** Use `figma_write_evaluate_script` to update the `@baluarte intent:` annotation label so it carries a `@css: cls1, cls2, cls3` line. The Figma annotation becomes the canonical source — the next `/baluarte-analyze` run reads `@css:` directly, the build sees `css_utilities` already populated, and re-runs are byte-level no-ops. Example write:
+
+   ```js
+   const node = await figma.getNodeByIdAsync('<node-id>');
+   const ann = (node.annotations || []).find(a => (a.label || '').startsWith('@baluarte intent:'));
+   if (ann) {
+     const lines = ann.label.split('\n').filter(l => !l.startsWith('@css:'));
+     lines.push(`@css: ${classes.join(', ')}`);
+     const others = (node.annotations || []).filter(a => a !== ann);
+     node.annotations = [...others, { label: lines.join('\n'), properties: [] }];
+   }
+   ```
+
+   This is the **only** Figma write the build skill is permitted to make. It does not modify the design, only the metadata annotation.
+
+**Step 5 — Audit line on every entity with a non-NULL description** in the per-tier digest:
+
+- `description: +<class>` — added a description-derived class (Confidence: high).
+- `description: +<class> (resolved via clarification)` — Confidence: proposed, user-resolved.
+- `description: skip — <reason>` — Confidence: low and unresolved; persisted to `notes`.
+- `description: warn — registry has <X> but description says <Y>` — registry wins, contradiction surfaced.
+- `description: warn — prose says <X>, @css says <Y>; using @css` — explicit `@css:` overrides inferred prose.
+- `description: noop — already covered by intent_json.<field>` — segment matched a structured field that was already set.
+
+#### 8.b. Designer override + idempotency
+
+- When `intent_json.css_utilities` is already populated AND the prose hasn't changed since last extraction, **skip the inference loop entirely** — apply the persisted utilities verbatim.
+- A designer who knows what they want can edit the Figma annotation directly and add `@css: overflow-hidden, scroll-smooth`. `baluarte-analyze` §6.5 drains that into `intent_json.css_utilities` on the next sync. Build respects designer-authored utilities without re-asking.
+- **Legacy "Default to act" rule:** when an entity has `description` text but `intent_json` is NULL (legacy rows from the old pipeline), still run the per-segment loop above with no structured-field shortcuts — every prose segment goes through Confidence-high / proposed / low.
+
+#### 8.legacy. Legacy prose-only path (transitional)
+
+When `description` is non-NULL AND `intent_json` is NULL (or missing the relevant field):
 
 **(a) Emit a JSDoc on the generated component function** between the AUTO-GENERATED header and the export:
 
@@ -343,3 +505,5 @@ Properties: baluarte.tailwind.ts: <N> entries (<M> changed)   |   or   "unchange
 - ❌ Wholesale `Write` an existing component when a targeted `Edit` covers the diff.
 - ❌ Overwrite a file that lacks the AUTO-GENERATED marker. Print the diff, let the user merge.
 - ❌ Inline a child component's markup in a parent's `.tsx`. Always import + render the child as JSX.
+- ❌ **Insert a row into `properties` for a class that exists as a built-in Tailwind utility.** Ambient utilities (`overflow-*`, `truncate`, `snap-x`, `cursor-*`, `pointer-events-*`, etc.) NEVER enter `properties` or `baluarte.tailwind.ts`. They go on the component's className string only, sourced from `intent_json.css_utilities[]` or the §8.a vocabulary table. See §8.invariant for the decision rule.
+- ❌ Drop an annotation segment silently. Every prose segment in `description` is either applied (Confidence: high), resolved via `AskUserQuestion` (Confidence: proposed/low), or audited with `description: skip — <reason>`. No silent waste.
