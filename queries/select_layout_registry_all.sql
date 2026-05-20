@@ -1,4 +1,4 @@
 -- Params: (none)
-SELECT uuid, layout_id, child_id, child_type, child_property
+SELECT uuid, layout_id, child_id, child_property
 FROM layout_registry
-ORDER BY layout_id, child_type, child_id;
+ORDER BY layout_id, child_id;

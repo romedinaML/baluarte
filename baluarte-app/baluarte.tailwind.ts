@@ -3,96 +3,60 @@
 //
 // Every theme key carries the `blte-` namespace prefix so the resulting
 // Tailwind classes (bg-blte-*, text-blte-*, pt-blte-*, rounded-blte-*,
-// shadow-blte-*, font-blte-*, leading-blte-*, tracking-blte-*) cannot
-// collide with Tailwind's built-in palette / spacing / radius / shadow
-// names. Tailwind built-ins (`flex flex-row`, `flex flex-col`,
-// `items-center`, `justify-center`) are NOT prefixed and not registered here.
+// shadow-blte-*) cannot collide with Tailwind built-ins. Tailwind built-in
+// utilities (flex flex-row, items-center, justify-center, overflow-x-hidden,
+// truncate, max-w-[Npx], etc.) are NOT prefixed and NOT registered here —
+// they are ambient utilities (see baluarte-build §8.invariant).
 
 export const baluarteTheme = {
   colors: {
-    'blte-actions-idle': '#000000', /* TODO: alias unresolved (Figma Variable) */ // @baluarte uuid=ae3fc16d8e52445413096802300581b5
-    'blte-blue-300': '#79b9f3', // @baluarte uuid=8e92150edf8b84fb924553862d81ea58
-    'blte-blue-500': '#3a98ed', // @baluarte uuid=095d393d849801010a46d045cb3f83c9
-    'blte-blue-700': '#1e64aa', // @baluarte uuid=4d93f7c5905b7324aff2f1c64ae23945
-    'blte-c-000000': '#000000', // @baluarte uuid=6d3f780bd38e45ea06b0671c74b30ab1
-    'blte-c-131313': '#131313', // @baluarte uuid=d795dcd56c9ad3f23761c499a44cd089
-    'blte-c-202020': '#202020', // @baluarte uuid=758b5c1ea58a225bdba510bc6beefd8b
-    'blte-c-212121': '#212121', // @baluarte uuid=a7eb4dfbf2cea71db3af4d0163ab5ba2
-    'blte-c-79b9f3': '#79b9f3', // @baluarte uuid=1a45c77eb7fbf2783c4bb050df05b3fc
-    'blte-c-79b9f3-a20': 'rgba(121, 185, 243, 0.2)', // @baluarte uuid=cfa5d1fabed3ff396afba8c88696d7dd
-    'blte-c-79b9f3-a50': 'rgba(121, 185, 243, 0.5)', // @baluarte uuid=c7e612f40bddf030a1da7b8ae5465a1f
-    'blte-c-edf3fa': '#edf3fa', // @baluarte uuid=923dc3a2a42554bc5a02a583ad37102d
-    'blte-c-f3ef81': '#f3ef81', // @baluarte uuid=ba6ec98cdf95000ebd0367064d6885f3
-    'blte-core-grey-500': '#e0e0e0', // @baluarte uuid=d007b1d535ff3eb62a1cc921ab6e511a
-    'blte-foundation-obsidian': '#031016', // @baluarte uuid=b1ad7ab65161f5b1ff7e10e802da959e
-    'blte-foundation-pure': '#ffffff', // @baluarte uuid=74537fec636e8a1bc7eb74de71acb21f
-    'blte-foundation-sky': '#edf3fa', // @baluarte uuid=f2c711045492800bf99826cd5bf556c0
-    'blte-green-500': '#62a442', // @baluarte uuid=29510156d65680e9efe1f0cb0e41446b
-    'blte-green-700': '#3b6a25', // @baluarte uuid=efa2103bcc580e74c360bd7258915b07
-    'blte-neutral-0': '#ffffff', // @baluarte uuid=acf8fce851a11a5cbb9cd9ed885f6499
-    'blte-neutral-200': '#d5d4d3', // @baluarte uuid=e53bb30d13e85014df58b10880da76af
-    'blte-red-500': '#ec4141', // @baluarte uuid=3966ef2cd3866a2363f3af584f396cb1
-    'blte-red-700': '#a93535', // @baluarte uuid=942b0f592cb666ca1728ca30d26629f9
-    'blte-supporting-current': '#66f3ff', // @baluarte uuid=45a6ba7ca647d1ccd4e6a278afb050ad
-    'blte-supporting-renewal': '#d9a6f9', // @baluarte uuid=70ad48617a7881475b19c767d6e00233
-    'blte-surfaces-in-range-primary': '#000000', /* TODO: alias unresolved */ // @baluarte uuid=7d0d2d30bc8c811efa80a0db74aaf994
-    'blte-surfaces-optimal-primary': '#000000', /* TODO: alias unresolved */ // @baluarte uuid=e33967c5855d2e8d5ccbbfb935c68e65
-    'blte-surfaces-out-of-range-primary': '#000000', /* TODO: alias unresolved */ // @baluarte uuid=7a6df9cb758cfbda94644998be46dd62
-    'blte-surfaces-primary': '#000000', /* TODO: alias unresolved */ // @baluarte uuid=2e370e5d1b361d1f67c166b25c6bcc13
-    'blte-surfaces-secondary': '#000000', /* TODO: alias unresolved */ // @baluarte uuid=0708e109143c327410f058df1dcdefc5
-    'blte-surfaces-surface-inverse': '#000000', /* TODO: alias unresolved */ // @baluarte uuid=b29df62053dfbb1bb550ca1148437f23
-    'blte-surfaces-tertiary': '#000000', /* TODO: alias unresolved */ // @baluarte uuid=d26dc618c3acc90d36cd79485eb3054a
-    'blte-text-in-range': '#000000', /* TODO: alias unresolved */ // @baluarte uuid=cd1944ec0bf0c20e2edb318108423602
-    'blte-text-optimal': '#000000', /* TODO: alias unresolved */ // @baluarte uuid=f89c27c0a4500eefbd4e3244f71822ae
-    'blte-text-out-of-range': '#000000', /* TODO: alias unresolved */ // @baluarte uuid=fc45fd349a6ad495ce5d5ca82a668f77
-    'blte-text-primary': '#000000', /* TODO: alias unresolved */ // @baluarte uuid=92c82346a904a52d5eacf77f36cbafc3
-    'blte-text-secondary': '#000000', /* TODO: alias unresolved */ // @baluarte uuid=703ac48d75170735a00c248ffea26be8
-    'blte-yellow-200': '#f3ef81', // @baluarte uuid=3cada64af1bb9bbcb4af60bebd298e7d
+    'blte-button-default':   '#E5DD1F', // @baluarte uuid=b179820d56ed0af7806af0480e258e7f
+    'blte-button-hover':     '#7A7510', // @baluarte uuid=11fd5a4461e6f819d35ba3506ad29416
+    'blte-button-disabled':  '#F5F1C7', // @baluarte uuid=751aa4fdfdf8d97c4bfa5792ef2461b3
+    'blte-text-default':     '#0A0A0A', // @baluarte uuid=3fa15cdc57d39bc10468f9e1210ad162
+    'blte-text-disabled':    '#B8B8B8', // @baluarte uuid=7257314c63b24ac928689e21aa39d03b
+    'blte-pill-high-bg':     '#FDE2E2', // @baluarte uuid=862b395d30b03a0e85768df7dc534d5c
+    'blte-pill-medium-bg':   '#FEF6C7', // @baluarte uuid=a08b6e240eba7fab0631b64305efcd19
+    'blte-pill-low-bg':      '#D1FADF', // @baluarte uuid=82edb93a54a6677250a6eb9b559b7fe5
+    'blte-pill-high-text':   '#B42318', // @baluarte uuid=3544248ac18d2feba3d8e55f876f1f17
+    'blte-pill-medium-text': '#8A6E0F', // @baluarte uuid=22bf4b2c5830869944028f434108d978
+    'blte-pill-low-text':    '#067647', // @baluarte uuid=eb1028a0aad93e42f2111ef857f35b82
+    'blte-section-header':   '#374151', // @baluarte uuid=c9f0fe0e0847e5cdbf82d0b62b36ef46
+    'blte-section':          '#F7F7FA', // @baluarte uuid=905c4bb8047525edd2d8dcf15bc91629
+    'blte-card':             '#FFFFFF', // @baluarte uuid=4b78d589be03145533c12f5b91935e4f
+    'blte-focus':            '#7A7510', // @baluarte uuid=30eb56e89d1be8725e3a0df8197454ac
   },
   spacing: {
-    'blte-4': '4px',     // @baluarte uuids=116f9cada99c196ad78d0616fec49262,e22a97c64605d7f426f2a137e9d6e379
-    'blte-8': '8px',     // @baluarte uuids=a41096f44cc01668bf75b13eb0783dbb,e39ca8c997365b8436b8005a2af53023
-    'blte-9': '9px',     // @baluarte uuids=6bd26a6cc9eb1693a83eff4b4c7fadc5,5cc8e7c98553b77f73112fa867a94ac7
-    'blte-10': '10px',   // @baluarte uuids=8a8f6306f1f63e58cce6002475886616,5d540caae65b2d9e4467e592b7dba818,f321894727edd66e740ab1085c73cfc2
-    'blte-12': '12px',   // @baluarte uuids=07baeb947d4cc209319f240c837ffbd0,2745427ca30530488d9272505662cc24
-    'blte-13': '13px',   // @baluarte uuids=44ce107f992d0b514ea5719d557a6acf
-    'blte-13.57': '13.571428298950195px', // @baluarte uuid=893c9777ea1fcf0218fe08b436a1f3f8
-    'blte-15': '15px',   // @baluarte uuids=55bd05e9bad9f16fc2ca0f690f36c1f3,b3d9ef6832ac1287e79ed0aee15ededd
-    'blte-16': '16px',   // @baluarte uuids=bcae61ad3c87bd37f3485281c8390f04,5b945d836b6cf481c15221bff6eabe19,447aff50f996aa4aeacb9222f8d0aa89,b9b5d3ddd123d8a5de61eac60525cf1d
-    'blte-17': '17px',   // @baluarte uuid=f68a197a71bc2d33fa5a730aa0e0d767
+    'blte-2':  '2px',  // @baluarte uuid=d282fcd1fb8f4b56ffe3e8a852cf2450
+    'blte-4':  '4px',  // @baluarte uuid=4743fa3a5c6572d0ee0e351584138f47
+    'blte-6':  '6px',  // @baluarte uuid=c832d50657064d89770a5c981fedb23f
+    'blte-8':  '8px',  // @baluarte uuid=2285147931f65260db9402e43f324649
+    'blte-10': '10px', // @baluarte uuid=f3a9a0e0f3b9d45ab20ae44045c9b751
+    'blte-16': '16px', // @baluarte uuid=799ba1fbc65b5ec132925e98119e8c0d
+    'blte-20': '20px', // @baluarte uuid=394a98a0b0e0b8459b1fe68d71ef9980
+    'blte-24': '24px', // @baluarte uuid=9c8877c1d400cd638628a228e8549c9f
+    'blte-40': '40px', // @baluarte uuid=5502f8ccf5cf57580aef4e01dda47a74
+    'blte-60': '60px', // @baluarte uuid=dade4ba3c8351471e2553db1697379bd
   },
   borderRadius: {
-    'blte-10': '10px', // @baluarte uuid=e501de1d44a876ce981cb04a9404d670
-    'blte-11': '11px', // @baluarte uuid=835277b6d3373dfa2a4682cda82d4e10
-    'blte-24': '24px', // @baluarte uuid=5773aeaf18cf6e1f7e6a9b96ca197cab
-    'blte-30': '30px', // @baluarte uuid=f37681649379c62de281065f25529a07
-    'blte-40': '40px', // @baluarte uuid=f5e4c4a2fbe228e07c9a78f9fbe73613
+    'blte-8':    '8px',    // @baluarte uuid=757e981a4f6f66e2b79bd72c731bae6c
+    'blte-12':   '12px',   // @baluarte uuid=cacbe3c578e0d01e4f65addb0db32ef7
+    'blte-full': '9999px', // @baluarte uuid=b520c26edd37ccaa711c9315e33b5376
   },
   borderWidth: {
-    'blte-1': '1px', // @baluarte uuid=6015541be7aed110d493cc0f55d8f779
+    'blte-3': '3px', // @baluarte uuid=dc44c47e106df402d148ce490a4f5156
+  },
+  boxShadow: {
+    'blte-card': '0px 4px 16px 0px rgba(0, 0, 0, 0.08)', // @baluarte uuid=30b966996adf063adcbea6a67b62fea8
   },
   fontFamily: {
-    'blte-feature-deck-trial': ['Feature Deck Trial', 'sans-serif'], // @baluarte uuid=757490fdf4a00c830b62bd7e05e1fb75
-    'blte-pp-neue-montreal': ['PP Neue Montreal', 'sans-serif'], // @baluarte uuid=d0b04d206e52f95b1220ea0d5cc49bc4
-    'blte-sequel-sans': ['Sequel Sans', 'sans-serif'], // @baluarte uuid=324d37263c0e42a139edbab745668f92
+    'blte-inter': ['Inter', 'sans-serif'],
   },
   fontSize: {
-    'blte-feature-deck-trial-16': ['16px', { lineHeight: '15.199999809265137px', letterSpacing: '-0.32px' }], // @baluarte uuid=757490fdf4a00c830b62bd7e05e1fb75
-    'blte-pp-neue-montreal-14': ['14px', { lineHeight: '23.80000114440918px', letterSpacing: '0.14px' }], // @baluarte uuid=d0b04d206e52f95b1220ea0d5cc49bc4
-    'blte-sequel-sans-14': ['14px', { lineHeight: '16.51999855041504px', letterSpacing: '-0.14px' }], // @baluarte uuid=324d37263c0e42a139edbab745668f92
-  },
-  fontWeight: {
-    'blte-w-305': '305', // @baluarte uuid=324d37263c0e42a139edbab745668f92
-    'blte-w-400': '400', // @baluarte uuids=757490fdf4a00c830b62bd7e05e1fb75,d0b04d206e52f95b1220ea0d5cc49bc4
-  },
-  lineHeight: {},
-  boxShadow: {
-    'blte-inset-3-white': 'inset 0 0 3px 0 #ffffff', // @baluarte uuid=26174bd8921581456ea7670d1966d898
-  },
-  _other: {
-    // Flex-row → `flex flex-row` (Tailwind built-in) // @baluarte uuid=74c27535efd1f947573241fed2e20879
-    // Flex-column → `flex flex-col` (Tailwind built-in) // @baluarte uuid=1a7cd6cd105ab4fcdf6d0659cad17761
-    // Flex-items-center → `items-center` (Tailwind built-in) // @baluarte uuid=039657fe3559aaf5139eed46e432b721
-    // Flex-justify-center → `justify-center` (Tailwind built-in) // @baluarte uuid=c57fe862b1154fd5150ff00e03e8ba6c
+    'blte-button':         ['12px', { lineHeight: '1.21em', fontWeight: '700' }],                          // @baluarte uuid=58d21e6f9d2010db0df261610698b25e
+    'blte-label':          ['12px', { lineHeight: '1.33em', fontWeight: '600' }],                          // @baluarte uuid=00672e51466082d97cef23a8c9a8cd24
+    'blte-section-header': ['12px', { lineHeight: '1.33em', fontWeight: '600', letterSpacing: '0.08em' }], // @baluarte uuid=57aab8ccd4832cb4bf1e98c6125ea5b0
+    'blte-heading':        ['20px', { lineHeight: '1.4em',  fontWeight: '700' }],                          // @baluarte uuid=46ae646f6bd04c089584ce2c9f196323
+    'blte-body':           ['14px', { lineHeight: '1.43em', fontWeight: '400' }],                          // @baluarte uuid=cd4c47af6db6b1fd8d59a66773be9385
   },
 } as const;

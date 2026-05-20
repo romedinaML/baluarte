@@ -1,6 +1,6 @@
 -- Dynamic update: pass NULL for any field you don't want to change.
 -- Params: :uuid, :name, :storybook_id, :description, :intent_json, :edited_at, :content_diff_hash
-UPDATE layouts
+UPDATE components
 SET name              = COALESCE(:name,              name),
     storybook_id      = COALESCE(:storybook_id,      storybook_id),
     description       = COALESCE(:description,       description),
